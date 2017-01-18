@@ -3,6 +3,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 
+/// <summary>
+/// 协程当前的状态
+/// </summary>
 public enum CorState
 {
     None,
@@ -10,14 +13,23 @@ public enum CorState
     Completed,
 }
 
+/// <summary>
+/// 协程节点, 用来构建协程等待序列
+/// NODE:
+/// 1. 终止当前节点协程也会终止所有等待该协程的协程
+/// 2. 协程只能运行一边（按照原理来说可以重置再启动，没有实现）
+/// </summary>
 public interface ICorNode
 {
     CorState State { get; }
+
     Coroutine Cor { get; }
-    ICorNode GetDeepest();
+
+    ICorNode WaitingFor { get; }
+   
     Coroutine Start();
+
     void Stop();
-    void Reset();
 }
 
 /// <summary>
@@ -51,6 +63,9 @@ public class CoroutineManager : MonoBehaviour
 
     class CorNode : ICorNode
     {
+        /// <summary>
+        /// 写程步进器，将所有迭代器串联为一个串依次步进而不用切入到Unity的内部调用
+        /// </summary>
         class Stepper
         {
             bool _stopped = false;
@@ -105,27 +120,35 @@ public class CoroutineManager : MonoBehaviour
                 _next = null;
             }
         }
+
+        /// <summary>
+        /// 迭代器代理，提交给Unity协程接口
+        /// </summary>
         class Iter : IEnumerator
         {
             CorNode _impl;
+
             public Iter(CorNode cor)
             { _impl = cor; }
+
             public object Current
             { get { return _impl._stepper.Current; } }
+
             public bool MoveNext()
             { return _impl.MoveNext(); }
+
             public void Reset()
             { throw new NotImplementedException(); }
         }
 
+        Iter _iter = null;
         Stepper _stepper = null;
         Action<ICorNode> _onFinish = null;     // callback on finish
         CorState _state = CorState.None;
 
         List<CorNode> _prev = null;             // those are waiting for me
         CorNode _next = null;                   // waiting for
-        Coroutine _cor = null;                  // 
-        Iter _iter = null;
+        Coroutine _cor = null;                  // Unity Coroutine
 
         public CorState State
         { get { return _state; } }
@@ -133,18 +156,13 @@ public class CoroutineManager : MonoBehaviour
         public Coroutine Cor
         { get { return _cor; } }
 
+        public ICorNode WaitingFor
+        { get { return _next; } }
+
         public CorNode(IEnumerator iter, Action<ICorNode> onFinish)
         {
             _stepper = new Stepper(iter);
             _onFinish = onFinish;
-        }
-
-        public ICorNode GetDeepest()
-        {
-            CorNode node = this;
-            while (node._next != null)
-                node = node._next;
-            return node;
         }
 
         public Coroutine Start()
@@ -176,8 +194,11 @@ public class CoroutineManager : MonoBehaviour
             OnComplete(false);
         }
 
-        public void Reset()
+        void Reset()
         {
+            if (_state != CorState.Completed)
+                return;
+
             _stepper.Reset();
             _state = CorState.None;
             _iter = null;

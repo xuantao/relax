@@ -10,20 +10,14 @@ using UnityEngine;
 public class CoroutineFactory
 {
     // map of name coroutine
-    struct CorName
+    class CorName
     {
-        public CorName(ICorNode node, string name)
-        {
-            Node = node;
-            Name = name;
-        }
-
         public ICorNode Node;
         public string Name;
     }
 
     Dictionary<Coroutine, CorName> _dicCors = new Dictionary<Coroutine, CorName>();
-    Dictionary<string, ICorNode> _dicNames = new Dictionary<string, ICorNode>();
+    Dictionary<string, CorName> _dicNames = new Dictionary<string, CorName>();
     ICorNode _starting = null;
 
     public int Count
@@ -43,9 +37,9 @@ public class CoroutineFactory
 
     public Coroutine GetCoroutine(string name)
     {
-        ICorNode value = null;
-        if (_dicNames.TryGetValue(name, out value))
-            return value.Cor;
+        CorName cn = null;
+        if (_dicNames.TryGetValue(name, out cn))
+            return cn.Node.Cor;
         return null;
     }
 
@@ -65,7 +59,7 @@ public class CoroutineFactory
         }
         if (_dicNames.ContainsKey(name))
         {
-            Debug.LogErrorFormat("Start Coroutine failed, name crshed [{0}]", name);
+            Debug.LogErrorFormat("Start Coroutine failed, name conflict [{0}]", name);
             return null;
         }
         return DoStart(name, iter);
@@ -80,11 +74,9 @@ public class CoroutineFactory
 
     public void Stop(string name, bool includeChildren = false)
     {
-        ICorNode node = null;
-        if (_dicNames.TryGetValue(name, out node))
-        {
-            DoStop(node, includeChildren);
-        }
+        CorName cn = null;
+        if (_dicNames.TryGetValue(name, out cn))
+            DoStop(cn.Node, includeChildren);
     }
 
     public void StopAll()
@@ -109,9 +101,12 @@ public class CoroutineFactory
             return null;
 
         Coroutine cor = _starting.Cor;
-        _dicCors[cor] = new CorName(_starting, name);
+        CorName cn = new CorName();
+        cn.Node = _starting;
+        cn.Name = name;
+        _dicCors[cor] = cn;
         if (!string.IsNullOrEmpty(name))
-            _dicNames[name] = _starting;
+            _dicNames[name] = cn;
 
         _starting = null;
         return cor;
@@ -119,8 +114,8 @@ public class CoroutineFactory
 
     void DoStop(ICorNode node, bool includeChildren)
     {
-        if (includeChildren)
-            node = node.GetDeepest();
+        while (includeChildren && node.WaitingFor != null)
+            node = node.WaitingFor;
         node.Stop();
     }
 
