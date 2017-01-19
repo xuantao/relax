@@ -5,6 +5,12 @@ using UnityEngine;
 
 static class Tool
 {
+    static int renderFrame = 0;
+    public static void PushFrame()
+    {
+        renderFrame = Time.renderedFrameCount;
+    }
+
     public static void Log(string name, int step, int tab = 0)
     {
         const int TAB = 4;
@@ -15,7 +21,7 @@ static class Tool
             new string(' ', TAB + name.Length % TAB),
             strStep,
             new string(' ', TAB + strStep.Length % TAB),
-            Time.renderedFrameCount);
+            Time.renderedFrameCount - renderFrame);
     }
 }
 
@@ -69,6 +75,7 @@ class TestNomal
 
     public void Test()
     {
+        Tool.PushFrame();
         _maker.Create(Test1());
     }
 
@@ -110,7 +117,13 @@ class TestCreate
         _maker = maker;
     }
 
-    public IEnumerator Test()
+    public void Test()
+    {
+        Tool.PushFrame();
+        _maker.Create(test_cor());
+    }
+
+    IEnumerator test_cor()
     {
         yield return _maker.Create(Step_1());
         yield return _maker.Create(Step_2());
@@ -153,6 +166,7 @@ class TestStop
 
     public void Test()
     {
+        Tool.PushFrame();
         _maker.Create(test_inner());
         _outside = _maker.Create(test_outside());
     }
@@ -178,7 +192,7 @@ class TestStop
     {
         yield return new WaitForSeconds(1f);
         Tool.Log("outside", 1);
-        yield return _maker.Create(test_inner_1());
+        yield return _maker.Create(test_outside_1());
         Tool.Log("outside", 2);
     }
 
@@ -194,12 +208,12 @@ class TestStop
     IEnumerator test_stop(bool inner)
     {
         yield return null;
-        Tool.Log(string.Format("stop coroutint {0}", inner ? "inner" : "outside"), 1);
+        Tool.Log(string.Format("stop coroutine {0}", inner ? "inner" : "outside"), 1);
         if (inner)
             _maker.Stop(_inner);
         else
             _maker.Stop(_outside);
-        Tool.Log(string.Format("stop coroutint {0}", inner ? "inner" : "outside"), 2);
+        Tool.Log(string.Format("stop coroutine {0}", inner ? "inner" : "outside"), 2);
     }
 }
 
@@ -210,11 +224,9 @@ class TestStopAll
     public TestStopAll(CorMaker maker)
     { _maker = maker; }
 
-    Coroutine _inner = null;
-    Coroutine _outside = null;
-
     public void Test()
     {
+        Tool.PushFrame();
         _maker.Create(test_1());
     }
 
@@ -271,15 +283,15 @@ public class TestCor : MonoBehaviour {
         _my = new CorMy(new CoroutineFactory());
     }
 
-    [ContextMenu("test normal orginal")]
-    void test_orginal_cor()
+    [ContextMenu("test normal original")]
+    void test_original_cor()
     { new TestNomal(_inner).Test(); }
 
     [ContextMenu("test normal factory")]
     void test_cor_factory()
     { new TestNomal(_my).Test(); }
 
-    [ContextMenu("test create orginal")]
+    [ContextMenu("test create original")]
     void test_create_ogrinal()
     { new TestCreate(_inner).Test(); }
 
@@ -287,7 +299,7 @@ public class TestCor : MonoBehaviour {
     void test_create_my()
     { new TestCreate(_my).Test(); }
 
-    [ContextMenu("test stop orginal")]
+    [ContextMenu("test stop original")]
     void test_stop_ogrinal()
     { new TestStop(_inner).Test(); }
 
@@ -295,11 +307,51 @@ public class TestCor : MonoBehaviour {
     void test_stop_my()
     { new TestStop(_my).Test(); }
 
-    [ContextMenu("test stop all orginal")]
+    [ContextMenu("test stop all original")]
     void test_stopall_ogrinal()
     { new TestStopAll(_inner).Test(); }
 
     [ContextMenu("test stop all factory")]
     void test_stopall_my()
     { new TestStopAll(_my).Test(); }
+
+    [ContextMenu("test all")]
+    void test_all()
+    {
+        _my.Create(test_all_cor());
+    }
+
+    IEnumerator test_all_cor()
+    {
+        Debug.LogError("TestNormal Original");
+        new TestNomal(_inner).Test();
+        yield return new WaitForSeconds(5f);
+
+        Debug.LogError("TestNormal Factory");
+        new TestNomal(_my).Test();
+        yield return new WaitForSeconds(5f);
+
+        Debug.LogError("TestCreate Original");
+        new TestCreate(_inner).Test();
+        yield return new WaitForSeconds(5f);
+
+        Debug.LogError("TestCreate Factory");
+        new TestCreate(_my).Test();
+        yield return new WaitForSeconds(5f);
+
+        Debug.LogError("TestStop Original");
+        new TestStop(_inner).Test();
+        yield return new WaitForSeconds(5f);
+
+        Debug.LogError("TestStop Factory");
+        new TestStop(_my).Test();
+        yield return new WaitForSeconds(5f);
+
+        Debug.LogError("TestStopAll Original");
+        new TestStopAll(_inner).Test();
+        yield return new WaitForSeconds(5f);
+
+        Debug.LogError("TestStopAll Factory");
+        new TestStopAll(_my).Test();
+    }
 }
