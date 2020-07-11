@@ -141,11 +141,11 @@ public class CoroutineManager : MonoBehaviour
             { throw new NotImplementedException(); }
         }
 
-        Iter _iter = null;
-        Stepper _stepper = null;
         Action<ICorNode> _onFinish = null;     // callback on finish
-        CorState _state = CorState.None;
+        Stepper _stepper = null;
 
+        Iter _iter = null;
+        CorState _state = CorState.None;
         List<CorNode> _prev = null;             // those are waiting for me
         CorNode _next = null;                   // waiting for
         Coroutine _cor = null;                  // Unity Coroutine
@@ -248,8 +248,6 @@ public class CoroutineManager : MonoBehaviour
             if (_state != CorState.Running)
                 return;
 
-            Coroutine cor = _cor;
-            _cor = null;
             _state = CorState.Completed;
 
             if (_next != null)
@@ -264,14 +262,17 @@ public class CoroutineManager : MonoBehaviour
                 _prev = null;
             }
 
-            if (cor != null)
-                _instance._cors.Remove(cor);
+            if (_cor != null)
+                _instance._cors.Remove(_cor);
 
             if (_onFinish != null)
                 _onFinish(this);
 
-            if (!nomal && cor != null)
-                _instance.StopCoroutine(cor);
+            if (!nomal && _cor != null)
+                _instance.StopCoroutine(_cor);
+
+            _cor = null;
+            _iter = null;
         }
     }
 }
