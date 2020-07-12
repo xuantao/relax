@@ -1,0 +1,8 @@
+
+enum := 'enum' word tag left_brace body right_brace
+tag := multi_comm
+left_brace  := '{'
+right_brace := '}'
+body    := dclare | ',' dclare
+
+
