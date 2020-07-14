@@ -101,8 +101,17 @@ local multiLineCommentProc = function(t, str, pos)
 end
 local enumProc = function(t, str, pos)
     local element = lpeg.C(p_ident) * p_empty * (lpeg.P'=' * p_empty * lpeg.C(p_decimal + p_hexadecimal) * p_empty)^-1 * lpeg.P','^-1
-    local p = lpeg.P'enum' * p_empty * lpeg.C(p_ident) * p_empty * lpeg.P'{' * (p_empty * element * p_empty)^0 * p_empty * lpeg.P'}'
-    print(p:match(str, pos))
+    local p = lpeg.P'enum' * p_empty * p_ident * p_empty * lpeg.P'{' * (p_empty * element * p_empty)^0 * p_empty * lpeg.P'}'
+    local p_enum = lpeg.P{
+        lpeg.P'enum' * lpeg.V'empty' * p_ident * lpeg.V'empty' * lpeg.P'{' * lpeg.V'empty' * lpeg.V'body'^0 * lpeg.V'empty' * lpeg.P'}';
+        empty = (p_space + p_comment + p_multi_line_comment)^0;
+        --body = lpeg.V'empty' + lpeg.V'stat';
+        body = lpeg.V'stat';
+        stat = p_ident * lpeg.V'empty' * (lpeg.P'=' * lpeg.V'empty' * lpeg.V'value')^-1 * lpeg.P','^-1;
+        value = p_decimal + p_hexadecimal;
+    }
+    print("1", p:match(str, pos))
+    print("2", p_enum:match(str, pos))
 end
 
 enumProc(nil, [[enum test{}]], 1)
