@@ -80,11 +80,18 @@ local function genScanner(...)
     return lpeg.P{ i * p * i + 1 * lpeg.V(1) } / function (b, k, e) return k, b, e end
 end
 
-local p_space = lpeg.S' \t\n'^0
+local p_space = lpeg.S' \t\n'
+local p_comment = lpeg.P'//' * (1 - lpeg.P'\n')^0 * (lpeg.P'\n' + -lpeg.P(1))   -- 单行注释
+local p_multi_line_comment = lpeg.P'/*' * (1 - lpeg.P'*/')^0 * lpeg.P'*/'       -- 多行注释
+local p_empty = (p_space + p_comment + p_multi_line_comment)^0
+local p_sign = lpeg.S'+-'^-1
 local p_digit = lpeg.R('09')
-local p_xdigit = lpeg.P'0' * lpeg.S'xX' * (p_digit + lpeg.R('af') + lpeg("AF"))^1
-local p_comment = lpeg.P'//' * (1 - lpeg.P'\n')^0 * lpeg.P'\n'^-1           -- 单行注释
-local p_multi_line_comment = lpeg.P'/*' * (1 - lpeg.P'*/')^0 * lpeg.P'*/'   -- 多行注释
+local p_decimal = p_digit^1
+local p_hexadecimal = lpeg.P'0' * lpeg.S'xX' * lpeg.R('09', 'af', "AF")^1
+local p_float = (p_digit^1 * lpeg.P'.' * p_digit^0 + lpeg.P'.' * p_digit^1) *(lpeg.S'eE' * p_sign * p_digit^1)^-1
+local p_idsafe = lpeg.R('AZ', 'az', '\127\255') + lpeg.P'_'
+--local p_ident = p_idsafe * (p_idsafe + p_digit + lpeg.P'.')^0
+local p_ident = p_idsafe * (p_idsafe + p_digit)^0
 
 local commentProc = function(t, str, pos)
     return p_comment:match(str, pos)
@@ -93,8 +100,19 @@ local multiLineCommentProc = function(t, str, pos)
     return p_multi_line_comment:match(str, pos)
 end
 local enumProc = function(t, str, pos)
-
+    local element = lpeg.C(p_ident) * p_empty * (lpeg.P'=' * p_empty * lpeg.C(p_decimal + p_hexadecimal) * p_empty)^-1 * lpeg.P','^-1
+    local p = lpeg.P'enum' * p_empty * lpeg.C(p_ident) * p_empty * lpeg.P'{' * (p_empty * element * p_empty)^0 * p_empty * lpeg.P'}'
+    print(p:match(str, pos))
 end
+
+enumProc(nil, [[enum test{}]], 1)
+enumProc(nil, [[enum test {}]], 1)
+enumProc(nil, [[enum test { }]], 1)
+enumProc(nil, [[enum test { xuantao, zouhui }]], 1)
+enumProc(nil, [[enum test { xuantao=1, zouhui }]], 1)
+enumProc(nil, [[enum test { xuantao = 1, zouhui }]], 1)
+enumProc(nil, [[enum test { xuantao = 1, zouhui = 2, }]], 1)
+enumProc(nil, [[enum test { xuantao/* xuantao */ = 1, zouhui/*zouhui*/  }]], 1)
 
 local function testDigit()
 
@@ -207,7 +225,7 @@ end
 --test()
 
 
-testCommentProc()
-testMultiLineCommentProc()
+--testCommentProc()
+--testMultiLineCommentProc()
 
 
