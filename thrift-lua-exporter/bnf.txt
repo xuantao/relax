@@ -5,4 +5,11 @@ left_brace  := '{'
 right_brace := '}'
 body    := dclare | ',' dclare
 
+# 过滤无用注释
 
+enum := 'enum' [tag] '{' enum-body '}'
+enum-body := {enum_element}
+enum_element := word ['=' number] [',' desc]
+
+// 参见
+http://lua-users.org/wiki/LpegRecipes
