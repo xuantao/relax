@@ -1,6 +1,9 @@
 -- export thrift error code
 local lib = require "lib"
 local lpeg = require "lpeg"
+local locale = lpeg.locale()
+local P, R, S, C, V, Cg = lpeg.P, lpeg.R, lpeg.S, lpeg.C, lpeg.V, lpeg.Cg
+local Cmt, Cb = lpeg.Cmt, lpeg.Cb
 local source = [[
 enum /*<@ErrorCode>*/ LSError {
 }
@@ -92,6 +95,7 @@ local p_float = (p_digit^1 * lpeg.P'.' * p_digit^0 + lpeg.P'.' * p_digit^1) *(lp
 local p_idsafe = lpeg.R('AZ', 'az', '\127\255') + lpeg.P'_'
 --local p_ident = p_idsafe * (p_idsafe + p_digit + lpeg.P'.')^0
 local p_ident = p_idsafe * (p_idsafe + p_digit)^0
+local p_tag = p_space^0 * lpeg.P'/*<@' * c_name * lpeg.P'>*/'* p_space^0
 
 local commentProc = function(t, str, pos)
     return p_comment:match(str, pos)
@@ -101,27 +105,41 @@ local multiLineCommentProc = function(t, str, pos)
 end
 local enumProc = function(t, str, pos)
     local element = lpeg.C(p_ident) * p_empty * (lpeg.P'=' * p_empty * lpeg.C(p_decimal + p_hexadecimal) * p_empty)^-1 * lpeg.P','^-1
-    local p = lpeg.P'enum' * p_empty * p_ident * p_empty * lpeg.P'{' * (p_empty * element * p_empty)^0 * p_empty * lpeg.P'}'
+    local p = lpeg.P'enum' * p_empty * lpeg.C(p_ident) * p_empty * lpeg.P'{' * (p_empty * element * p_empty)^0 * p_empty * lpeg.P'}'
     local p_enum = lpeg.P{
-        lpeg.P'enum' * lpeg.V'empty' * p_ident * lpeg.V'empty' * lpeg.P'{' * lpeg.V'empty' * lpeg.V'body'^0 * lpeg.V'empty' * lpeg.P'}';
+        lpeg.P'enum' * lpeg.V'empty' * p_ident * lpeg.V'empty' * lpeg.P'{' * lpeg.V'empty' * lpeg.V'body' * lpeg.V'empty' * lpeg.P'}';
         empty = (p_space + p_comment + p_multi_line_comment)^0;
         --body = lpeg.V'empty' + lpeg.V'stat';
-        body = lpeg.V'stat';
-        stat = p_ident * lpeg.V'empty' * (lpeg.P'=' * lpeg.V'empty' * lpeg.V'value')^-1 * lpeg.P','^-1;
+        body = lpeg.V'stat'^0;
+        stat = p_ident * lpeg.V'empty' * lpeg.V'assign' * lpeg.P','^-1;
+        assign = (lpeg.P'=' * lpeg.V'empty' * lpeg.V'value' * lpeg.V'empty')^-1;
         value = p_decimal + p_hexadecimal;
     }
     print("1", p:match(str, pos))
-    print("2", p_enum:match(str, pos))
+    --print("2", p_enum:match(str, pos))
+
+
+    local p_enum2 = P{
+        V'enum',
+        enum = P'enum' * lpeg.C(p_tag + V'space'/"") * C(p_ident) * V'space' * V'body',
+        space = (p_space + p_comment + p_multi_line_comment)^0,
+        body = P'{' * V'space' * V'element'^0 * V'space' * P'}',
+        element = V'space' * C(p_ident) * (V'space' * P'=' * V'space' * C(p_decimal + p_hexadecimal))^-1 * V'space'*P','^-1,
+    }
+    print("3", p_enum2:match(str, pos))
 end
 
-enumProc(nil, [[enum test{}]], 1)
-enumProc(nil, [[enum test {}]], 1)
-enumProc(nil, [[enum test { }]], 1)
-enumProc(nil, [[enum test { xuantao, zouhui }]], 1)
-enumProc(nil, [[enum test { xuantao=1, zouhui }]], 1)
-enumProc(nil, [[enum test { xuantao = 1, zouhui }]], 1)
-enumProc(nil, [[enum test { xuantao = 1, zouhui = 2, }]], 1)
-enumProc(nil, [[enum test { xuantao/* xuantao */ = 1, zouhui/*zouhui*/  }]], 1)
+local function testEnumProc()
+    enumProc(nil, [[enum test{}]], 1)
+    enumProc(nil, [[enum/*<@error>*/test{}]], 1)
+    enumProc(nil, [[enum test {}]], 1)
+    enumProc(nil, [[enum test { }]], 1)
+    enumProc(nil, [[enum test { xuantao, zouhui }]], 1)
+    enumProc(nil, [[enum test { xuantao=1, zouhui }]], 1)
+    enumProc(nil, [[enum test { xuantao = 1, zouhui }]], 1)
+    enumProc(nil, [[enum test { xuantao = 1, zouhui = 2, }]], 1)
+    enumProc(nil, [[enum test { xuantao/* xuantao */ = 1, zouhui/*zouhui*/  }]], 1)
+end
 
 local function testDigit()
 
@@ -236,5 +254,75 @@ end
 
 --testCommentProc()
 --testMultiLineCommentProc()
+
+local function testExtractTag()
+    local I = lpeg.Cp()
+    local c1 = lpeg.P'//' * (1 - lpeg.P'\n')^0 * (lpeg.P'\n' + -lpeg.P(1))   -- 单行注释
+    local c2 = lpeg.P'/*' * (1 - lpeg.P'*/')^0 * lpeg.P'*/'       -- 多行注释
+    local comment = (c1 + c2)
+    local tag = lpeg.P'/*<@' * c_name * lpeg.P'>*/'
+    local tag2 = #tag
+    local only = (-tag * comment + tag)
+
+    --print(tag:match("/*<@error>*/"))
+    --print(comment:match("/*<@error>*/"))
+    print("only1", only:match("/*<@error>*/"), "$")
+    print("only2", only:match("/*<-error>*/"), "$")
+    --print("test1", test:match("/*<@error>*/"), "$")
+    --print("test2", test:match("/*<-error>*/"), "$")
+end
+--testExtractTag()
+
+local function testCb()
+    local equals = lpeg.P"="^0
+    local open = P"[" * lpeg.Cg(equals, "init") * P"[" * lpeg.P"\n"^-1
+    local close = P"]" * lpeg.C(equals) * P"]"
+    local closeeq = lpeg.Cmt(close * lpeg.Cb("init"), function (s, i, a, b)
+        print('close', string.format("s:%s, i:%s, a:%s, b:%s", s, i, a, b))
+        return a == b
+    end)
+    local long_str = open * lpeg.C((lpeg.P(1) - closeeq)^0) * close / 1
+
+    local str = [==[[=[xuantao]=]]==]
+    local str1 = [==[[=[xuantao]=]]==]
+    print("testCb1", long_str:match(str), "$")
+
+    local longstring = P { -- from Roberto Ierusalimschy's lpeg examples
+        V "open" * C((P(1) - V "closeeq")^0) * V "close" / function (a, b, c, d) return 
+            print("l2", string.format("a:%s, b:%s, c:%s, d:%s", a, b, c, d))
+        end;
+        open = "[" * Cg((P "=")^0, "init") * P "[" * (P "\n")^-1;
+        close = "]" * C((P "=")^0) * "]";
+        closeeq = Cmt(V "close" * Cb "init", function (s, i, a, b) return a == b end)
+    };
+    print("testCb2", longstring:match(str), "$")
+
+    local longstring3 = #(P '[[' + (P '[' * P '=' ^ 0 * P '['))
+    local longstring4 = longstring3 * P(function(input, index)
+        print("4", input, index)
+        local level = input:match('^%[(=*)%[', index)
+        if level then
+            local _, stop = input:find(']' .. level .. ']', index, true)
+            if stop then return stop + 1 end
+        end
+    end)
+    print("testCb", longstring4:match(str), "$")
+    --print("testCb", longstring4:match(str1), "$")
+end
+--testCb()
+
+local function testCt()
+    local ct1 = lpeg.Ct(C(p_decimal) * (p_space^0 * P',' * p_space^0 * C(p_decimal))^0)
+    lib.Log("ct1", lpeg.match(ct1, "1"))
+    lib.Log("ct1", lpeg.match(ct1, "1,2,3,4"))
+    lib.Log("ct1", lpeg.match(ct1, "1, 2, 3, 4"))
+
+    local ct2 = lpeg.Ct(C(p_decimal) * (P'=' * C(p_decimal))^0 * ',' * C(p_ident) * (P'=' * C(p_decimal))^0)
+    lib.Log("ct2", lpeg.match(ct2, "1,xuantao=102"))
+    lib.Log("ct2", lpeg.match(ct2, "1,xuantao"))
+    lib.Log("ct2", lpeg.match(ct2, "1=102,xuantao=102"))
+end
+testCt()
+
 
 

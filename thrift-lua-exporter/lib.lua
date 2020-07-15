@@ -50,8 +50,12 @@ local function toStr(val, sep)
     return str
 end
 
-local function log(val)
-    print(toStr(val))
+local function log(...)
+    local s = {}
+    for _, v in ipairs({...}) do
+        table.insert(s, toStr(v))
+    end
+    print(table.unpack(s))
 end
 
 return {
