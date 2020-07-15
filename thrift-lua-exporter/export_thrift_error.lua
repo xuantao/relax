@@ -2,8 +2,8 @@
 local lib = require "lib"
 local lpeg = require "lpeg"
 local locale = lpeg.locale()
-local P, R, S, C, V, Cg = lpeg.P, lpeg.R, lpeg.S, lpeg.C, lpeg.V, lpeg.Cg
-local Cmt, Cb = lpeg.Cmt, lpeg.Cb
+local P, R, S, V= lpeg.P, lpeg.R, lpeg.S, lpeg.V
+local C, Cb, Cf, Cg, Cp, Ct, Cmt = lpeg.C, lpeg.Cb, lpeg.Cf, lpeg.Cg, lpeg.Cp, lpeg.Ct, lpeg.Cmt
 local source = [[
 enum /*<@ErrorCode>*/ LSError {
 }
@@ -115,35 +115,34 @@ local enumProc = function(t, str, pos)
         assign = (lpeg.P'=' * lpeg.V'empty' * lpeg.V'value' * lpeg.V'empty')^-1;
         value = p_decimal + p_hexadecimal;
     }
-    print("1", p:match(str, pos))
+    --print("1", p:match(str, pos))
     --print("2", p_enum:match(str, pos))
 
 
     local p_enum2 = P{
         V'enum',
-        enum = P'enum' * lpeg.C(p_tag + V'space'/"") * C(p_ident) * V'space' * V'body',
+        enum = Ct(P'enum' * (Cg(p_tag, 'tag') + V'space') * Cg(p_ident, 'name') * V'space' * V'body'),
         space = (p_space + p_comment + p_multi_line_comment)^0,
-        body = P'{' * V'space' * V'element'^0 * V'space' * P'}',
-        element = V'space' * C(p_ident) * (V'space' * P'=' * V'space' * C(p_decimal + p_hexadecimal))^-1 * V'space'*P','^-1,
+        body = P'{' * V'space' * Cg(Ct(V'element'^0), "vals") * V'space' * P'}',
+        element = Ct(V'space' * C(p_ident) * V'space' * (P'=' * V'space' * V'value' * V'space') * P','^-1),
+        value = (p_decimal + p_hexadecimal)^-1,
     }
-    print("3", p_enum2:match(str, pos))
+    lib.Log(p_enum2:match(str, pos))
+    --print("3", lib.Log(p_enum2:match(str, pos)), "$")
 end
 
 local function testEnumProc()
     enumProc(nil, [[enum test{}]], 1)
     enumProc(nil, [[enum/*<@error>*/test{}]], 1)
-    enumProc(nil, [[enum test {}]], 1)
-    enumProc(nil, [[enum test { }]], 1)
+    --enumProc(nil, [[enum test {}]], 1)
+    --enumProc(nil, [[enum test { }]], 1)
     enumProc(nil, [[enum test { xuantao, zouhui }]], 1)
     enumProc(nil, [[enum test { xuantao=1, zouhui }]], 1)
-    enumProc(nil, [[enum test { xuantao = 1, zouhui }]], 1)
-    enumProc(nil, [[enum test { xuantao = 1, zouhui = 2, }]], 1)
-    enumProc(nil, [[enum test { xuantao/* xuantao */ = 1, zouhui/*zouhui*/  }]], 1)
+    --enumProc(nil, [[enum test { xuantao = 1, zouhui }]], 1)
+    --enumProc(nil, [[enum test { xuantao = 1, zouhui = 2, }]], 1)
+    --enumProc(nil, [[enum test { xuantao/* xuantao */ = 1, zouhui/*zouhui*/  }]], 1)
 end
-
-local function testDigit()
-
-end
+testEnumProc()
 
 local function testCommentProc()
     local f = function (str)
@@ -317,12 +316,12 @@ local function testCt()
     lib.Log("ct1", lpeg.match(ct1, "1,2,3,4"))
     lib.Log("ct1", lpeg.match(ct1, "1, 2, 3, 4"))
 
-    local ct2 = lpeg.Ct(C(p_decimal) * (P'=' * C(p_decimal))^0 * ',' * C(p_ident) * (P'=' * C(p_decimal))^0)
+    local ct2 = lpeg.Ct(C(p_decimal) * ((P'=' * C(p_decimal))^0 / 1) * ',' * Cg(p_ident, "name") * ((P'=' * C(p_decimal))^0 / 1))
     lib.Log("ct2", lpeg.match(ct2, "1,xuantao=102"))
     lib.Log("ct2", lpeg.match(ct2, "1,xuantao"))
-    lib.Log("ct2", lpeg.match(ct2, "1=102,xuantao=102"))
+    lib.Log("ct2", lpeg.match(ct2, "1=101,xuantao=102"))
 end
-testCt()
+--testCt()
 
 
 
