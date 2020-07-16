@@ -13,3 +13,77 @@ enum_element := word ['=' number] [',' desc]
 
 // 参见
 http://lua-users.org/wiki/LpegRecipes
+
+{"const", id, {type, value, desc}}
+{"enum", id, {tag, desc, {{id, val, desc}... }}}
+{"typedef", id, {type, desc}}
+{"include", id, {file, {}}}
+
+
+
+TS = P{
+    (V'include' + V'typedef' + V'const' + V'enum') + (p_comment + p_multi_line_comment + p_space + 1) * V(1),
+    include = P'include' * p_empty * (P"'" * C(p_reference) * P"'" +  P'"' * C(p_reference) * P'"') /
+        function (f)
+            local p = string.find(f, "%.")
+            local s = p and string.sub(f, 1, p - 1) or f
+            local t = loadFile(f)
+            --local v = t and lpeg.match(V(1), t)
+            return {"include", s, { f = f, v = v}}
+        end,
+    typedef = (c_annotation^-1/1 * p_space^0 * P'typedef' * p_empty * C(p_reference) * p_empty * C(p_identity) *
+        S',;'^-1 * S' \t'^0 * c_annotation^-1) /
+        function (pre_desc, type, id, suf_desc)
+            return {"typedef", id, {type = type, desc = suf_desc or pre_desc}}
+        end,
+    const = (c_annotation^-1/1 * p_space^0 * P'const' * p_empty * C(p_reference) * p_empty * C(p_identity) * p_space * P'=' *
+        p_space* C(p_decimal + p_hexadecimal + p_reference) * S',;'^-1 * S' \t'^0 * c_annotation^-1) /
+        function (pre_desc, type, id, value, suf_desc)
+            return {"const", id, {t = type, v = value, d = suf_desc or pre_desc}}
+        end,
+    enum = P{
+            V'enum',
+            enum = (c_annotation^-1/1) * p_space^0 * P'enum' * (c_tag^-1/1) * p_space * C(p_identity) * p_empty * V'body' /
+                function (desc, tag, id, v) print("ss", string.format("desc:%s, tag:%s, id:%s", desc, tag, id)) return {"enum", id, {tag = tag, desc = desc, vars = v}} end,
+            body = P'{' * p_empty * V'vars' * p_empty * P'}',
+            vars = Ct(V'ele_begin'^0 * V'ele_end'^-1),
+            ele_begin = p_empty * C(p_identity) * (V'value'^-1/1) * p_empty * P',' * S' \t'^0 * (c_annotation^-1/1) /
+                function(id, v, desc) return {id = id, value = v, desc = desc} end,
+            ele_end = p_empty * C(p_identity) * (V'value'^-1/1) * S' \t'^0 * (c_annotation^-1/1) /
+                function(id, v, desc) return {id = id, value = v, desc = desc} end,
+            value = p_empty * P'=' * p_empty * C(p_decimal + p_hexadecimal),
+        },
+}
+
+
+local TS
+local c_include = P'include' * p_empty * (P"'" * C(p_reference) * P"'" +  P'"' * C(p_reference) * P'"') /
+    function (f)
+        local p = string.find(f, "%.")
+        local s = p and string.sub(f, 1, p - 1) or f
+        local t = loadFile(f)
+        --local v = t and lpeg.match(V(1), t)
+        return {"include", s, { f = f, v = v}}
+    end
+local c_typedef = (c_annotation * p_space * P'typedef' * p_empty * C(p_reference) * p_empty * C(p_identity) *
+    S',;'^-1 * S' \t'^0 * c_annotation) / function (pre_desc, type, id, suf_desc)
+        return {"typedef", id, {type = type, desc = suf_desc or pre_desc}}
+    end
+local c_const = c_annotation * p_space * P'const' * p_empty * C(p_reference) * p_empty * C(p_identity) * p_space * P'=' *
+    p_space* C(p_decimal + p_hexadecimal + p_reference) * S',;'^-1 * S' \t'^0 * c_annotation /
+    function (pre_desc, type, id, value, suf_desc)
+        return {"const", id, {t = type, v = value, d = suf_desc or pre_desc}}
+    end
+local c_enum = P{
+        V'enum',
+        enum = c_annotation * p_space * P'enum' * p_space * c_tag * p_empty * C(p_identity) * p_empty * V'body' /
+            function (desc, tag, id, v) print("ss", string.format("desc:%s, tag:%s, id:%s", desc, tag, id)) return {"enum", id, {tag = tag, desc = desc, vars = v}} end,
+        body = P'{' * p_empty * V'vars' * p_empty * P'}',
+        vars = Ct(V'ele_begin'^0 * V'ele_end'^-1),
+        ele_begin = p_empty * C(p_identity) * (V'value'^-1/1) * p_empty * P',' * S' \t'^0 * c_annotation /
+            function(id, v, desc) return {id = id, value = v, desc = desc} end,
+        ele_end = p_empty * C(p_identity) * (V'value'^-1/1) * S' \t'^0 * c_annotation /
+            function(id, v, desc) return {id = id, value = v, desc = desc} end,
+        value = p_empty * P'=' * p_empty * C(p_decimal + p_hexadecimal),
+    }
+
