@@ -1,6 +1,5 @@
 -- thrift parser
 
-local lib = require "lib"
 local lpeg = require "lpeg"
 local P, R, S, V = lpeg.P, lpeg.R, lpeg.S, lpeg.V
 local C, Cb, Cf, Cg, Cp, Ct, Cmt = lpeg.C, lpeg.Cb, lpeg.Cf, lpeg.Cg, lpeg.Cp, lpeg.Ct, lpeg.Cmt
@@ -55,7 +54,7 @@ local function loadFile(f)
 end
 
 -- thrift scanner
-local path = {""}
+local path = {}
 local parseFile
 local ts = P{
     (V'include' + V'typedef' + V'const' + V'enum') * Cp() + (p_comment + p_multi_line_comment + 1) * V(1),
@@ -105,7 +104,7 @@ local function parseSource(text)
     return ret
 end
 
-local function parseFile(file)
+function parseFile(file)
     local fp
     if #path == 0 then
         fp = file
@@ -118,6 +117,13 @@ local function parseFile(file)
     table.remove(path, #path)
     return ret
 end
+
+--require("lib").Log(parseFile(arg[1]))
+local ret = parseFile(arg[1])
+local f = io.open("ret1.txt", 'w')
+f:write(string.char(0xef, 0xbb, 0xbf))
+f:write(require("lib").ToStr(ret))
+f:close()
 
 return {
     ParseSource = parseSource,
