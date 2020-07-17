@@ -57,19 +57,21 @@ end
 -- thrift scanner
 local path = {""}
 local parseFile
-local TS = P{
+local ts = P{
     (V'include' + V'typedef' + V'const' + V'enum') * Cp() + (p_comment + p_multi_line_comment + 1) * V(1),
+
     include = P'include' * p_empty * (P"'" * C(p_reference) * P"'" +  P'"' * C(p_reference) * P'"') /
-        function (f)
-            return {"include", getFileName(f), {file = f, vars = parseFile(f)}}
-        end,
+        function (f) return {"include", getFileName(f), {file = f, vars = parseFile(f)}} end,
+
     typedef = c_annotation * p_space * P'typedef' * p_empty * C(p_reference) * p_empty * C(p_identity) *
         S',;'^-1 * S' \t'^0 * c_annotation / function (pre_desc, type, id, suf_desc)
             return {"typedef", id, {type = type, desc = suf_desc or pre_desc}}
         end,
+
     const = c_annotation * p_space * P'const' * p_empty * C(p_reference) * p_empty * C(p_identity) * p_space * P'=' *
         p_space* C(p_decimal + p_hexadecimal + p_reference) * S',;'^-1 * S' \t'^0 * c_annotation / 
             function (pre_desc, type, id, value, suf_desc) return {"const", id, {t = type, v = value, d = suf_desc or pre_desc}} end,
+
     enum = P{
         V'enum',
         enum = c_annotation * p_space * P'enum' * p_space * c_tag * p_empty * C(p_identity) * p_empty * V'body' /
@@ -84,34 +86,40 @@ local TS = P{
     }
 }
 
-function parseFile(f)
-    local fp
-    if #path == 0 then
-        fp = f
-    else
-        fp = concatPath(path[#path], f)
+local function parseSource(text)
+    if not text then
+        return
     end
 
-    local t = loadFile(fp)
-    if not t then
-         return
-    end
-
-    table.insert(path, getFilePath(fp))
     local pos = 1
     local ret = {}
     while true do
         local e
-        local last = pos
-        e, pos = lpeg.match(TS, t, pos)
+        e, pos = lpeg.match(ts, text, pos)
         if not e or not pos then
             break
         end
 
         table.insert(ret, e)
     end
+    return ret
+end
+
+local function parseFile(file)
+    local fp
+    if #path == 0 then
+        fp = file
+    else
+        fp = concatPath(path[#path], file)
+    end
+
+    table.insert(path, getFilePath(fp))
+    local ret = parseSource(loadFile(fp))
     table.remove(path, #path)
     return ret
 end
 
-lib.Log(parseFile(arg[1]))
+return {
+    ParseSource = parseSource,
+    ParseFile = parseFile,
+}
