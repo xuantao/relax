@@ -621,18 +621,24 @@ local function getFileName(f)
     return f:sub(p_slash + 1, p_dot - 1)
 end
 
-print(getFileName("d:/a/b/c/d/xuantao.lua"))
-print(getFileName("d:\\a\\b\\c\\d\\xuantao.lua"))
-print(getFileName("d:\\a/b\\c\\d/xuantao.lua"))
+--print(getFileName("d:/a/b/c/d/xuantao.lua"))
+--print(getFileName("d:\\a\\b\\c\\d\\xuantao.lua"))
+--print(getFileName("d:\\a/b\\c\\d/xuantao.lua"))
 
 local function getFilePath(f)
     local p_slash = f:find("[/\\][^/\\]*$")
     return p_slash and f:sub(1, p_slash) or ""
 end
-print(getFilePath("d:/a/b/c/d/xuantao.lua"))
-print(getFilePath("d:\\a\\b\\c\\d\\xuantao.lua"))
-print(getFilePath("d:\\a/b\\c\\d/xuantao.lua"))
+--print(getFilePath("d:/a/b/c/d/xuantao.lua"))
+--print(getFilePath("d:\\a\\b\\c\\d\\xuantao.lua"))
+--print(getFilePath("d:\\a/b\\c\\d/xuantao.lua"))
 
 
-
-
+local function testSkip()
+    --local s = P'struct' * p_empty * p_identity * p_empty * P'{';
+    local s = P {
+        "struct",
+        struct = P'struct' * p_empty * p_identity * p_empty * P'{' * p_empty * V'body'* p_empty * P'}',
+        body = "",
+    }
+end
