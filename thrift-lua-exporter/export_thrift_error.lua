@@ -522,6 +522,7 @@ local function loadFile(f)
     end
 
     local s = file:read('a')
+    file:close()
     if #s >= 3 and
         s:byte(1, 1) == 0xef and s:byte(2, 1) == 0xbb and s:byte(3, 1) == 0xbf then
         return s:sub(4)

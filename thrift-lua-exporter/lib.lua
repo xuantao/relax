@@ -1,3 +1,4 @@
+local lib = {}
 
 local function visitTable(val, p)
     local np = function (s, d)
@@ -33,7 +34,7 @@ local function visitTable(val, p)
 end
 
 -- 转换位字符串
-local function toStr(val, sep)
+function lib.ToStr(val, sep)
     local str
     sep = sep or '\n'
     if type(val) == "table" then
@@ -50,15 +51,43 @@ local function toStr(val, sep)
     return str
 end
 
-local function log(...)
+function lib.Log(...)
     local s = {}
     for _, v in ipairs({...}) do
-        table.insert(s, toStr(v))
+        table.insert(s, lib.ToStr(v))
     end
     print(table.unpack(s))
 end
 
-return {
-    ToStr = toStr,
-    Log = log,
-}
+function lib.LoadFile(fileName)
+    local f = io.open(fileName, 'r')
+    if not f then
+        return
+    end
+
+    local s = f:read('a')
+    f:close()
+    if #s >= 3 and
+        s:byte(1) == 0xef and
+        s:byte(2) == 0xbb and 
+        s:byte(3) == 0xbf then
+        return s:sub(4)
+    end
+    return s
+end
+
+function lib.TrimLeft(str, pat)
+    pat = pat or " \t\r\t"
+    local b, l = string.find(str, string.format("^[%s]*", pat))
+    print(b, l, str, string.sub(str, b + l))
+    return string.sub(str, b + l)
+end
+
+function lib.Trim(str, pat)
+    pat = pat or " \t\r\t"
+    local b, l = string.find(str, string.format("^[%s]*", pat))
+    local e, l2 = string.find(str, string.format("[%s]*$", pat))
+    return string.sub(str, b + l, e - 1)
+end
+
+return lib

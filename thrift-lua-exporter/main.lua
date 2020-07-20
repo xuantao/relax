@@ -17,4 +17,9 @@ print(Trim("\txuantao\t") .."$")
 print(Trim("\t xuantao\t ") .."$")
 
 
+local str = '123'
+print("byte", string.byte(str, 1))
+print("byte", string.byte(str, 2))
+print("byte", string.byte(str, 3))
+
 

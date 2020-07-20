@@ -155,10 +155,36 @@ local function writeJson(exp, fileName)
     f:close()
 end
 
+local function loadXls(file)
+    local text = lib.LoadFile(file)
+    if not text then
+        return
+    end
+
+    local ret = {}
+    for l in string.gmatch(text, "(.-)\r?\n") do
+        local e = {}
+        string.gsub(l, "([^\t]+)", function(c) table.insert(e, c) end)
+        table.insert(ret, e)
+    end
+    return ret
+end
+
+local function saveXls(file, tabs)
+    local f = io.open(file, 'w')
+    f:write(string.char(0xef, 0xbb, 0xbf))
+    for _, t in ipairs(tabs) do
+        f:write(table.concat(t, '\t'))
+        f:write("\n")
+    end
+    f:close()
+end
+
 local function trans()
-    local ret = require("thrift-parser").ParseFile("./test/tcligs.thrift")
+    local file = "./test/tcligs.thrift"
+    local ret = require("thrift-parser").ParseFile(file)
     if not ret then
-        print(string.format("parse file failed"))
+        print(string.format("parse file failed, file:%s", file))
         return
     end
 
@@ -166,7 +192,6 @@ local function trans()
         env = {name = "tcligs", namespace = "", type = {}},
         exp = {const = {}, enum = {}, tip = {}}
     }
-
     processData(g, ret)
 
     local etc ={}
@@ -178,5 +203,66 @@ local function trans()
     --lib.Log("v =", g.exp)
 end
 
-trans()
+--trans()
+--lib.Log(loadXls("UITipsNotifyCodeTab.xls"))
 
+local function trimLeft(str, pat)
+    local b, l = string.find(str, pat)
+    return string.sub(str, b + l)
+end
+
+local function upateTip(tips)
+    local kId = 1
+    local kKey = 2
+    local kCode = 4
+    local kFile = "UITipsNotifyCodeTab.xls"
+    local ret = {}
+    local src = loadXls(kFile)
+
+    if not src then
+        src = {
+            {"ID", "", "", "", ""},
+            {"nID", "szKey", "szDesc", "nCodeVal", "nBgID"},
+            {"int", "string", "string", "int", "int"},
+            {"nID", "关键字", "内容", "错误码值", "背景图"},
+            {"默认值", "", "", "", ""},
+        }
+    end
+
+    -- copy header
+    for i = 1, 5 do
+        table.insert(ret, src[i])
+    end
+
+    local map = {}
+    for _, v in ipairs(src) do
+        local c = tonumber(v[kCode])
+        if c then
+            map[c] = v
+        end
+    end
+
+    for i, v in ipairs(tips) do
+        local t = map[v.value]
+        if not t then
+            t = {i, trimLeft(v.name, "TipsNotifyCode_"), v.desc, v.value, "", ""}
+        else
+            t[kId] = i
+            t[kKey] = trimLeft(v.name, "TipsNotifyCode_")
+        end
+
+        table.insert(ret, t)
+    end
+
+    saveXls("UITipsNotifyCodeTab_new.xls", ret)
+    return true
+end
+
+local function updateFiles()
+    local text = lib.LoadFile("test.json")
+    local thrift = josn:decode(text)
+    upateTip(thrift.tip)
+end
+
+print("updateFiles")
+updateFiles()
