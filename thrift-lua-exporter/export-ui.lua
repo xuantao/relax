@@ -1,4 +1,5 @@
 local lib = require("lib")
+local josn = require("Json")
 --require("lib").Log(parseFile(arg[1]))
 
 --local f = io.open("ret1.txt", 'w')
@@ -167,7 +168,14 @@ local function trans()
     }
 
     processData(g, ret)
-    lib.Log("v =", g.exp)
+
+    local etc ={}
+    local str = josn:encode(g.exp, etc, {pretty = true, indent = "  ", align_keys = false})
+    local f = io.open("test.json", 'w')
+    f:write(string.char(0xef, 0xbb, 0xbf))
+    f:write(str)
+    f:close()
+    --lib.Log("v =", g.exp)
 end
 
 trans()

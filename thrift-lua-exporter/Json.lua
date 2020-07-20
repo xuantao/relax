@@ -1382,7 +1382,8 @@ end
 --
 
 local JSON = OBJDEF:new()
-
+return JSON
+--[[
 function JsonEncode(value, options, etc)
     if options == true then
         return JSON:encode_pretty(value, etc, nil)
@@ -1394,3 +1395,4 @@ end
 function JsonDecode(value, options, etc)
     return JSON:decode(value, etc, options)
 end
+]]
