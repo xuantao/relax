@@ -642,3 +642,12 @@ local function testSkip()
         body = "",
     }
 end
+
+local function testNameSpace()
+    local ns = P'namespace' * p_empty * C(p_identity) * p_empty * C(p_identity) / function (lan, id)
+            return {"namespace", id, lan}
+        end
+    local str = "namespace csharp protocol_gs"
+    lib.Log(ns:match(str))
+end
+testNameSpace()

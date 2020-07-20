@@ -57,10 +57,14 @@ end
 local path = {}
 local parseFile
 local ts = P{
-    (V'include' + V'typedef' + V'const' + V'enum') * Cp() + (p_comment + p_multi_line_comment + 1) * V(1),
+    (V'include' + V'typedef' + V'const' + V'enum' + V'namespace') * Cp() + (p_comment + p_multi_line_comment + 1) * V(1),
 
     include = P'include' * p_empty * (P"'" * C(p_reference) * P"'" +  P'"' * C(p_reference) * P'"') /
         function (f) return {"include", getFileName(f), {file = f, vars = parseFile(f)}} end,
+
+    namespace = P'namespace' * p_empty * C(p_identity) * p_empty * C(p_identity) / function (lan, id)
+            return {"namespace", id, lan}
+        end,
 
     typedef = c_annotation * p_space * P'typedef' * p_empty * C(p_reference) * p_empty * C(p_identity) *
         S',;'^-1 * S' \t'^0 * c_annotation / function (pre_desc, type, id, suf_desc)
@@ -69,7 +73,7 @@ local ts = P{
 
     const = c_annotation * p_space * P'const' * p_empty * C(p_reference) * p_empty * C(p_identity) * p_space * P'=' *
         p_space* C(p_decimal + p_hexadecimal + p_reference) * S',;'^-1 * S' \t'^0 * c_annotation / 
-            function (pre_desc, type, id, value, suf_desc) return {"const", id, {t = type, v = value, d = suf_desc or pre_desc}} end,
+            function (pre_desc, type, id, value, suf_desc) return {"const", id, {type = type, value = value, desc = suf_desc or pre_desc}} end,
 
     enum = P{
         V'enum',
@@ -117,13 +121,6 @@ function parseFile(file)
     table.remove(path, #path)
     return ret
 end
-
---require("lib").Log(parseFile(arg[1]))
-local ret = parseFile(arg[1])
-local f = io.open("ret1.txt", 'w')
-f:write(string.char(0xef, 0xbb, 0xbf))
-f:write(require("lib").ToStr(ret))
-f:close()
 
 return {
     ParseSource = parseSource,
