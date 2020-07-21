@@ -113,48 +113,6 @@ function processData(g, data)
     end
 end
 
-local function writeJson(exp, fileName)
-    local f = io.open(fileName, 'w')
-    f:write(string.char(0xef, 0xbb, 0xbf))
-    f:write("{\n")
-
-    -- const
-    f:write("  \"const\": [\n")
-    for _, c in ipairs(exp.const) do
-        --f:write(string.format("\"name\": \"%s\", \"realName\":\"%s\", value:%s\n"), )
-    end
-    if #exp.const > 0 then
-        f:seek("cur", -2)
-        f:write("\n")
-    end
-    f:write("  ],\n")
-
-    -- tip
-    f:write("  \"tip\": [\n")
-    for _, t in ipairs(exp.tip) do
-        --f:write(string.format("\"name\": \"%s\", \"realName\":\"%s\", value:%s\n"), )
-    end
-    if #exp.tip > 0 then
-        f:seek("cur", -2)
-        f:write("\n")
-    end
-    f:write("  ],\n")
-
-    -- enum
-    f:write("  \"enum\": [\n")
-    for _, e in ipairs(exp.enum) do
-        --f:write(string.format("\"name\": \"%s\", \"realName\":\"%s\", value:%s\n"), )
-    end
-    if #exp.enum > 0 then
-        f:seek("cur", -2)
-        f:write("\n")
-    end
-    f:write("  ]\n")
-
-    f:write("}")
-    f:close()
-end
-
 local function loadXls(file)
     local text = lib.LoadFile(file)
     if not text then
@@ -211,7 +169,7 @@ local function trimLeft(str, pat)
     return string.sub(str, b + l)
 end
 
-local function upateTip(tips)
+local function updateTip(tips)
     local kId = 1
     local kKey = 2
     local kCode = 4
@@ -255,13 +213,109 @@ local function upateTip(tips)
     end
 
     saveXls("UITipsNotifyCodeTab_new.xls", ret)
-    return true
+    return ret
+end
+
+local function mergeErrorDef(thrift)
+    local csharp = josn:decode(lib.LoadFile("CustomEnum.json"))
+    local ret = {}
+    local cache = {}
+
+    for _, e in ipairs(thrift.enum) do
+        if e.errorCode then
+            cache[e.realName] = v
+        end
+    end
+
+    for _, ce in ipairs(csharp) do
+        if ce.errorCode then
+            local te = cache[ce.realName]
+            if te then
+                cache[ce.realName] = nil
+                print("111", te.name, ce.name)
+                te.name = ce.name
+                table.insert(ret, te)
+            else
+                print("222", ce.name)
+                table.insert(ret, ce)
+            end
+        end
+    end
+
+    for _, te in ipairs(thrift.enum) do
+        if te.errorCode and not cache[te.realName] then
+            table.insert(ret, te)
+        end
+    end
+
+    return ret
+end
+
+local function updateErrorCodeXls(thrift)
+    local kId = 1
+    local kMode = 2
+    local kKey = 3
+    local kCode = 5
+    local kFile = "UIErrorCodeTab.xls"
+    local ret = {}
+    local src = loadXls(kFile)
+    local err = mergeErrorDef(thrift)
+
+    if not src then
+        src = {
+            {"ID",      "",         "",         "",         "",         ""},
+            {"nID",     "szModule", "szKey",    "szDesc",   "nCodeVal", "nBgID"},
+            {"int",     "string",   "string",   "string",   "int",      "int"},
+            {"nID",     "模块名",   "关键字",    "内容",    "错误码值", "背景图"},
+            {"默认值",  "",         "",         "",         "",         ""},
+        }
+    end
+
+    -- copy header
+    for i = 1, 5 do
+        table.insert(ret, src[i])
+    end
+
+    local cache = {}
+    for i = 6, #src do
+        local s = src[i]
+        local t = cache[s[kMode]]
+        if not t then
+            t = {}
+            cache[s[kMode]] = t
+        end
+        t[s[kKey]] = s
+    end
+
+    local idx = 1
+    for _, e in ipairs(err) do
+        local old = cache[e.name]
+        for _, c in ipairs(e.values) do
+            local s = old and old[c.name]
+            if s then
+                s[kId] = idx
+                s[kCode] = tonumber(c.value)
+                table.insert(ret, s)
+            else
+                table.insert(ret, {idx, e.name, c.name, lib.Trim(c.desc or ""), tonumber(c.value), 0})
+            end
+            idx = idx + 1
+        end
+    end
+
+    saveXls("UIErrorCodeTab_new.xls", ret)
+    return ret
+end
+
+local function updateDef(thrift, csharp)
 end
 
 local function updateFiles()
     local text = lib.LoadFile("test.json")
     local thrift = josn:decode(text)
-    upateTip(thrift.tip)
+
+    updateTip(thrift.tip)
+    updateErrorCodeXls(thrift)
 end
 
 print("updateFiles")
