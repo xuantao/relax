@@ -1,4 +1,4 @@
--- startup root
+﻿-- startup root
 local lib = require "lib"
 local exp = require "export-ui"
 
