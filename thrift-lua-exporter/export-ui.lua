@@ -449,6 +449,6 @@ local function export(cfg)
 end
 
 return {
-    ParseThrift = trans,
+    ParseThrift = parseThrift,
     Export = export,
 }

@@ -1,4 +1,4 @@
-﻿local iconv = require "luaiconv"
+﻿--local iconv = require "luaiconv"
 local lib = {}
 
 local function visitTable(val, p)

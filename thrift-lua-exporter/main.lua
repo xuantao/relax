@@ -10,7 +10,8 @@ local cfg = {
     tipCodeFile = "UITipsNotifyCodeTab.xls",
 }
 _DEBUG_XLS_ = true  -- debug模式
---exp.Export(cfg)
+exp.ParseThrift("test/tcligs.thrift", "tcligs.json")
+exp.Export(cfg)
 
 local function on_thrift_upate()
 end
