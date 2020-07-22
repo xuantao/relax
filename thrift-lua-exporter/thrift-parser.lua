@@ -1,6 +1,6 @@
--- thrift parser
-
-local lpeg = require "lpeg"
+﻿-- thrift parser
+-- 解析thrift中定义的部分内容(const, enum等)
+local lpeg = require "lpeglabel"
 local P, R, S, V = lpeg.P, lpeg.R, lpeg.S, lpeg.V
 local C, Cb, Cf, Cg, Cp, Ct, Cmt = lpeg.C, lpeg.Cb, lpeg.Cf, lpeg.Cg, lpeg.Cp, lpeg.Ct, lpeg.Cmt
 
@@ -39,20 +39,6 @@ local function getFileName(f)
     local p_dot = f:find("%.") or #f + 1
     return f:sub(p_slash + 1, p_dot - 1)
 end
-local function loadFile(f)
-    local file = io.open(f, 'r')
-    if not file then
-        return
-    end
-
-    local s = file:read('a')
-    file:close()
-    if #s >= 3 and
-        s:byte(1, 1) == 0xef and s:byte(2, 1) == 0xbb and s:byte(3, 1) == 0xbf then
-        return s:sub(4)
-    end
-    return s
-end
 
 -- thrift scanner
 local path = {}
@@ -90,6 +76,7 @@ local ts = P{
     }
 }
 
+-- 解析文本
 local function parseSource(text)
     if not text then
         return
@@ -109,6 +96,7 @@ local function parseSource(text)
     return ret
 end
 
+-- 解析文件
 function parseFile(file)
     local fp
     if #path == 0 then
@@ -118,7 +106,7 @@ function parseFile(file)
     end
 
     table.insert(path, getFilePath(fp))
-    local ret = parseSource(loadFile(fp))
+    local ret = parseSource(lib.LoadFile(fp))
     table.remove(path, #path)
     return ret
 end

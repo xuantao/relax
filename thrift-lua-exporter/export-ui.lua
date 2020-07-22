@@ -1,12 +1,9 @@
+﻿-- export-ui
+-- 将C#、thrift定义的枚举文件导出到UI配置文件
+-- 相关中间有: thrift.json, csharp.json
+-- 导出目标有: EnumDef.lua, UIErrorCodeTab.xls, UITipsNotifyCodeTab.xls
 local lib = require("lib")
-local josn = require("Json")
---require("lib").Log(parseFile(arg[1]))
-
---local f = io.open("ret1.txt", 'w')
---f:write(string.char(0xef, 0xbb, 0xbf))
---f:write(require("lib").ToStr(ret))
---f:close()
-
+local json = require("json")
 local processData
 
 local function concatNs(ns, name)
@@ -40,7 +37,7 @@ end
 local function onInclude(g, item)
     local prev = g.env
     g.env = {name = item[2], namespace = "", type = prev.type}
-    processData(g, item[3])
+    processData(g, item[3].vars)
     g.env = prev
 end
 
@@ -121,62 +118,36 @@ local function loadXls(file)
 
     local ret = {}
     for l in string.gmatch(text, "(.-)\r?\n") do
-        local e = {}
-        string.gsub(l, "([^\t]+)", function(c) table.insert(e, c) end)
-        table.insert(ret, e)
+        table.insert(ret, lib.Split(l, '\t'))
     end
     return ret
 end
 
 local function saveXls(file, tabs)
+    if _DEBUG_XLS_ then file = "d-" .. file end
     local f = io.open(file, 'w')
-    f:write(string.char(0xef, 0xbb, 0xbf))
     for _, t in ipairs(tabs) do
-        f:write(table.concat(t, '\t'))
+        f:write(lib.Conv(table.concat(t, '\t'), "utf-8", "gbk"))
         f:write("\n")
     end
     f:close()
 end
-
-local function trans()
-    local file = "./test/tcligs.thrift"
-    local ret = require("thrift-parser").ParseFile(file)
-    if not ret then
-        print(string.format("parse file failed, file:%s", file))
-        return
-    end
-
-    local g = {
-        env = {name = "tcligs", namespace = "", type = {}},
-        exp = {const = {}, enum = {}, tip = {}}
-    }
-    processData(g, ret)
-
-    local etc ={}
-    local str = josn:encode(g.exp, etc, {pretty = true, indent = "  ", align_keys = false})
-    local f = io.open("test.json", 'w')
-    f:write(string.char(0xef, 0xbb, 0xbf))
-    f:write(str)
-    f:close()
-    --lib.Log("v =", g.exp)
-end
-
---trans()
---lib.Log(loadXls("UITipsNotifyCodeTab.xls"))
 
 local function trimLeft(str, pat)
     local b, l = string.find(str, pat)
     return string.sub(str, b + l)
 end
 
-local function updateTip(tips)
+local function exportTipCode(tipCodeFile, tips)
+    if not tips then
+        return  -- not exist
+    end
+
     local kId = 1
     local kKey = 2
     local kCode = 4
-    local kFile = "UITipsNotifyCodeTab.xls"
     local ret = {}
-    local src = loadXls(kFile)
-
+    local src = loadXls(tipCodeFile)
     if not src then
         src = {
             {"ID", "", "", "", ""},
@@ -212,12 +183,10 @@ local function updateTip(tips)
         table.insert(ret, t)
     end
 
-    saveXls("UITipsNotifyCodeTab_new.xls", ret)
-    return ret
+    saveXls(tipCodeFile, ret)
 end
 
-local function mergeErrorDef(thrift)
-    local csharp = josn:decode(lib.LoadFile("CustomEnum.json"))
+local function mergeErrorCode(thrift, csharp)
     local ret = {}
     local cache = {}
 
@@ -232,18 +201,16 @@ local function mergeErrorDef(thrift)
             local te = cache[ce.realName]
             if te then
                 cache[ce.realName] = nil
-                print("111", te.name, ce.name)
                 te.name = ce.name
                 table.insert(ret, te)
             else
-                print("222", ce.name)
                 table.insert(ret, ce)
             end
         end
     end
 
     for _, te in ipairs(thrift.enum) do
-        if te.errorCode and not cache[te.realName] then
+        if te.errorCode and cache[te.realName] then
             table.insert(ret, te)
         end
     end
@@ -251,15 +218,14 @@ local function mergeErrorDef(thrift)
     return ret
 end
 
-local function updateErrorCodeXls(thrift)
+local function exportErrorCode(errorCodeFile, thrift, csharp)
     local kId = 1
     local kMode = 2
     local kKey = 3
     local kCode = 5
-    local kFile = "UIErrorCodeTab.xls"
     local ret = {}
-    local src = loadXls(kFile)
-    local err = mergeErrorDef(thrift)
+    local src = loadXls(errorCodeFile)
+    local err = mergeErrorCode(thrift, csharp)
 
     if not src then
         src = {
@@ -303,20 +269,186 @@ local function updateErrorCodeXls(thrift)
         end
     end
 
-    saveXls("UIErrorCodeTab_new.xls", ret)
-    return ret
+    saveXls(errorCodeFile, ret)
 end
 
-local function updateDef(thrift, csharp)
+local function writeLuaValue(f, val, tab, comma)
+    local ml
+    comma = comma or ''
+    if val.desc and val.desc ~= "" then
+        local b, e = string.find(val.desc, '\n')
+        ml = e and e > 0
+        if ml then
+            f:write(string.format("%s--[[%s]]\n", tab, val.desc))
+        end
+    end
+
+    if val.type == "string" then
+        f:write(string.format("%s%s = \"%s\"", tab, val.name, val.value))
+    else
+        f:write(string.format("%s%s = %s", tab, val.name, val.value))
+    end
+    f:write(comma)
+
+    if not ml and val.desc and val.desc ~= "" then
+        f:write(string.format("    --%s", val.desc))
+    end
+    f:write("\n");
 end
 
-local function updateFiles()
-    local text = lib.LoadFile("test.json")
-    local thrift = josn:decode(text)
+local function exportEnumFile(enumFile, thrift, csharp)
+    local f = io.open(enumFile, 'w')
+    f:write(string.char(0xef, 0xbb, 0xbf))
+    f:write("--- EnumDef C#枚举定义\n")
+    f:write("-- @module EnumDef\n\n")
+    -- csharp相关定义
+    for _, e in ipairs(csharp) do
+        if not e.errorCode then
+            f:write(string.format("--- %s\n", e.desc))
+            f:write(string.format("-- @table %s\n", e.name))
+            f:write(string.format("%s = {\n", e.name))
+            for _, l in ipairs(e.values) do
+                f:write(string.format("    %s = %s,\n", l.name, l.value))
+            end
+            f:write("}\n")
+        end
+    end
 
-    updateTip(thrift.tip)
-    updateErrorCodeXls(thrift)
+    -- thrift相关定义
+    local default = {namespace = "", const = {}, enum = {}}
+    local nsMap = {[""] = default}
+    local nsList = {default}
+    for _, info in ipairs(thrift.enum) do
+        if not info.errorCode then
+            local p = lib.Split(info.realName, '%.')
+            local ns
+            if #p > 1 then
+                ns = nsMap[p[1]]
+                if not ns then
+                    ns = {namespace = p[1], const = {}, enum = {}}
+                    nsMap[p[1]] = ns
+                    table.insert(nsList, ns)
+                end
+            else
+                ns = default
+            end
+
+            table.insert(ns.enum, info)
+        end
+    end
+
+    for _, info in ipairs(thrift.const) do
+        local p = lib.Split(info.realName, '%.')
+        local ns
+        if #p > 1 then
+            ns = nsMap[p[1]]
+            if not ns then
+                ns = {namespace = p[1], const = {}, enum = {}}
+                nsMap[p[1]] = ns
+                table.insert(nsList, ns)
+            end
+        else
+            ns = default
+        end
+
+        table.insert(ns.const, info)
+    end
+
+    if #nsList > 0 then
+        if #csharp > 0 then
+            f:write("\n\n")
+        end
+        f:write("--- thrift定义的常量、枚举\n")
+    end
+    for i, ns in ipairs(nsList) do
+        local tab = ""
+        local tab2 = "    "
+        local nsComma = ""
+        local isNs = ns.namespace ~= ""
+
+        if i > 2 then   -- 第一个为空白明明空间
+            f:write('\n')
+        end
+
+        if isNs then
+            tab = "    "
+            tab2 = "        "
+            nsComma = ','
+            f:write(string.format("---@namespace %s\n", ns.namespace))
+            f:write(string.format("%s = {\n", ns.namespace))
+        end
+
+        -- const
+        for _, val in ipairs(ns.const) do
+            writeLuaValue(f, val, tab, nsComma)
+        end
+
+        if #ns.const > 0  and #ns.enum > 0then
+            f:write("\n")
+        end
+
+        -- enum
+        for _, info in ipairs(ns.enum) do
+            if info.desc and info.desc ~= "" then
+                f:write(string.format("%s--[[%s]]\n", tab, info.desc))
+            end
+            f:write(string.format("%s%s = {\n", tab, info.name))
+            for _, val in ipairs(info.values) do
+                writeLuaValue(f, val, tab2, ',')
+            end
+            f:write(string.format("%s}%s\n", tab, nsComma))
+        end
+
+        if ns.namespace ~= "" then
+            f:write("}\n")
+        end
+    end
+
+    f:close()
 end
 
-print("updateFiles")
-updateFiles()
+-- 解析thrift并导出成json
+-- srcThrift: 源协议文件
+-- destJson:  目标Json文件
+local function parseThrift(srcThrift, destJson)
+    local ret = require("thrift-parser").ParseFile(srcThrift)
+    if not ret then
+        print(string.format("parse file failed, file:%s", srcThrift))
+        return
+    end
+
+    local g = {
+        env = {name = "tcligs", namespace = "", type = {}},
+        exp = {const = {}, enum = {}, tip = {}}
+    }
+    processData(g, ret)
+
+    local etc ={}
+    local str = json:encode(g.exp, etc, {pretty = true, indent = "  ", align_keys = false})
+    local f = io.open(destJson, 'w')
+    f:write(string.char(0xef, 0xbb, 0xbf))
+    f:write(str)
+    f:close()
+end
+
+-- 将中间文件导出到目标文件
+-- cfg = {
+--    thriftFile = "thrift.json",
+--    csharpFile = "csharp.json",
+--    enumDefFile = "EnumDef.lua",
+--    errorCodeFile = "UIErrorCodeTab.xls",
+--    tipCodeFile = "UITipsNotifyCodeTab.xls",
+-- }
+local function export(cfg)
+    local thrift = json:decode(lib.LoadFile(cfg.thriftFile)) or {}
+    local csharp = json:decode(lib.LoadFile(cfg.csharpFile)) or {}
+
+    exportTipCode(cfg.tipCodeFile, thrift.tip)
+    exportErrorCode(cfg.errorCodeFile, thrift, csharp)
+    exportEnumFile(cfg.enumDefFile, thrift, csharp)
+end
+
+return {
+    ParseThrift = trans,
+    Export = export,
+}

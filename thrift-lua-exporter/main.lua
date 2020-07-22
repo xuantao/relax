@@ -1,25 +1,31 @@
 -- startup root
---require "export_thrift_error"
+local lib = require "lib"
+local exp = require "export-ui"
 
+local cfg = {
+    thriftFile = "test.json",
+    csharpFile = "CustomEnum.json",
+    enumDefFile = "EnumDef.lua",
+    errorCodeFile = "UIErrorCodeTab.xls",
+    tipCodeFile = "UITipsNotifyCodeTab.xls",
+}
+_DEBUG_XLS_ = true  -- debug模式
+--exp.Export(cfg)
 
-local function Trim(str)
-    local b, l = string.find(str, "^[ \t\n]*")
-    local e, l2 = string.find(str, "[ \t\n]*$")
-    return string.sub(str, b + l, e - 1)
+local function on_thrift_upate()
 end
 
-print(Trim("xuantao") .."$")
-print(Trim("xuan tao") .."$")
-print(Trim(" xuantao") .."$")
-print(Trim("xuantao ") .."$")
-print(Trim(" xuantao ") .."$")
-print(Trim("\txuantao\t") .."$")
-print(Trim("\t xuantao\t ") .."$")
+local function on_csharp_update()
+end
+
+local function export_tabs()
+end
+
+print("argc", arg[1])
+
+--print(lib.Conv("宣涛", "utf-8", "gbk"))
 
 
-local str = '123'
-print("byte", string.byte(str, 1))
-print("byte", string.byte(str, 2))
-print("byte", string.byte(str, 3))
+
 
 
