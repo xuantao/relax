@@ -1,4 +1,4 @@
-﻿--local iconv = require "luaiconv"
+﻿local gbk = require "gbk"
 local lib = {}
 
 local function visitTable(val, p)
@@ -140,25 +140,6 @@ function lib.IsUtf8(s)
     return 0
 end
 
-local convObj = {}
--- 编码转换
--- 将字符串(s)从源编码(from)转换到目标编码(to)
-function lib.Conv(s, from, to)
-    to = to or "utf-8"
-    local cd = iconv.new(to .. "//TRANSLIT", from)
-    local ostr, err = cd:iconv(s)
-    if err == iconv.ERROR_INCOMPLETE then
-      print("ERROR: Incomplete input.", s)
-    elseif err == iconv.ERROR_INVALID then
-      print("ERROR: Invalid input.", s)
-    elseif err == iconv.ERROR_NO_MEMORY then
-      print("ERROR: Failed to allocate memory.", s)
-    elseif err == iconv.ERROR_UNKNOWN then
-      print("ERROR: There was an unknown error.", s)
-    end
-    return ostr
-end
-
 function lib.LoadFile(fileName)
     local f = io.open(fileName, 'r')
     if not f then
@@ -172,7 +153,7 @@ function lib.LoadFile(fileName)
             s = s:sub(4)
         end
     else
-        s = lib.Conv(s, "gbk", "utf-8")
+        s = gbk.toutf8(s)
     end
     return s
 end

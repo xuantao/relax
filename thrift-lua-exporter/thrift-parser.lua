@@ -31,14 +31,20 @@ local function concatPath(p, f)
         return string.format("%s/%s", p, f)
     end
 end
+
 local function getFilePath(f)
     local p_slash = f:find("[/\\][^/\\]*$")
     return p_slash and f:sub(1, p_slash) or ""
 end
+
 local function getFileName(f)
     local p_slash = f:find("[/\\][^/\\]*$") or 0
     local p_dot = f:find("%.") or #f + 1
     return f:sub(p_slash + 1, p_dot - 1)
+end
+
+local function prefer(sur, pre)
+    return sur and sur ~= "" and sur or pre
 end
 
 -- thrift scanner
@@ -56,12 +62,12 @@ local ts = P{
 
     typedef = c_annotation * p_space * P'typedef' * p_empty * C(p_reference) * p_empty * C(p_identity) *
         S',;'^-1 * S' \t'^0 * c_annotation / function (pre_desc, type, id, suf_desc)
-            return {"typedef", id, {type = type, desc = suf_desc or pre_desc}}
+            return {"typedef", id, {type = type, desc = prefer(suf_desc, pre_desc)}}
         end,
 
     const = c_annotation * p_space * P'const' * p_empty * C(p_reference) * p_empty * C(p_identity) * p_space * P'=' *
         p_space* C(p_decimal + p_hexadecimal + p_reference) * S',;'^-1 * S' \t'^0 * c_annotation / 
-            function (pre_desc, type, id, value, suf_desc) return {"const", id, {type = type, value = value, desc = suf_desc or pre_desc}} end,
+            function (pre_desc, type, id, value, suf_desc) return {"const", id, {type = type, value = value, desc = prefer(suf_desc, pre_desc)}} end,
 
     enum = P{
         V'enum',

@@ -3,7 +3,8 @@
 -- 相关中间有: thrift.json, csharp.json
 -- 导出目标有: EnumDef.lua, UIErrorCodeTab.xls, UITipsNotifyCodeTab.xls
 local lib = require("lib")
-local json = require("json")
+local gbk = require("gbk")
+local json, objdef = require("json")
 local processData
 
 local function concatNs(ns, name)
@@ -127,7 +128,7 @@ local function saveXls(file, tabs)
     if _DEBUG_XLS_ then file = "d-" .. file end
     local f = io.open(file, 'w')
     for _, t in ipairs(tabs) do
-        f:write(lib.Conv(table.concat(t, '\t'), "utf-8", "gbk"))
+        f:write(gbk.fromutf8(table.concat(t, '\t')))
         f:write("\n")
     end
     f:close()
@@ -190,28 +191,28 @@ local function mergeErrorCode(thrift, csharp)
     local ret = {}
     local cache = {}
 
-    for _, e in ipairs(thrift.enum) do
-        if e.errorCode then
-            cache[e.realName] = v
+    for _, info in ipairs(thrift.enum) do
+        if info.errorCode then
+            cache[info.realName] = info
         end
     end
 
-    for _, ce in ipairs(csharp) do
-        if ce.errorCode then
-            local te = cache[ce.realName]
+    for _, info in ipairs(csharp) do
+        if info.errorCode then
+            local te = cache[info.realName]
             if te then
-                cache[ce.realName] = nil
-                te.name = ce.name
+                cache[info.realName] = nil
+                te.name = info.name
                 table.insert(ret, te)
             else
-                table.insert(ret, ce)
+                table.insert(ret, info)
             end
         end
     end
 
-    for _, te in ipairs(thrift.enum) do
-        if te.errorCode and cache[te.realName] then
-            table.insert(ret, te)
+    for _, info in ipairs(thrift.enum) do
+        if info.errorCode and cache[info.realName] then
+            table.insert(ret, info)
         end
     end
 
@@ -275,6 +276,7 @@ end
 local function writeLuaValue(f, val, tab, comma)
     local ml
     comma = comma or ''
+
     if val.desc and val.desc ~= "" then
         local b, e = string.find(val.desc, '\n')
         ml = e and e > 0
@@ -440,8 +442,8 @@ end
 --    tipCodeFile = "UITipsNotifyCodeTab.xls",
 -- }
 local function export(cfg)
-    local thrift = json:decode(lib.LoadFile(cfg.thriftFile)) or {}
-    local csharp = json:decode(lib.LoadFile(cfg.csharpFile)) or {}
+    local thrift = json:decode(lib.LoadFile(cfg.thriftFile) or "{}")
+    local csharp = json:decode(lib.LoadFile(cfg.csharpFile) or "{}")
 
     exportTipCode(cfg.tipCodeFile, thrift.tip)
     exportErrorCode(cfg.errorCodeFile, thrift, csharp)

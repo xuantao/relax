@@ -3,7 +3,7 @@ local lib = require "lib"
 local exp = require "export-ui"
 
 local cfg = {
-    thriftFile = "test.json",
+    thriftFile = "tcligs.json",
     csharpFile = "CustomEnum.json",
     enumDefFile = "EnumDef.lua",
     errorCodeFile = "UIErrorCodeTab.xls",
