@@ -74,10 +74,8 @@ local ts = P{
         enum = c_annotation * p_space * P'enum' * p_space * c_tag * p_empty * C(p_identity) * p_empty * V'body' /
             function (desc, tag, id, v) return {"enum", id, {tag = tag, desc = desc, vars = v}} end,
         body = P'{' * p_empty * V'vars' * p_empty * P'}',
-        vars = Ct(V'ele_begin'^0),
-        ele_begin = p_empty * C(p_identity) * (V'value'^-1/1) * p_empty * S',;'^0 * S' \t'^0 * c_annotation /
-            function(id, v, desc) return {id = id, value = v, desc = desc} end,
-        ele_end = p_empty * C(p_identity) * (V'value'^-1/1) * S' \t'^0 * c_annotation /
+        vars = Ct(V'var'^0),
+        var = p_empty * C(p_identity) * (V'value'^-1/1) * p_empty * S',;'^0 * S' \t'^0 * c_annotation /
             function(id, v, desc) return {id = id, value = v, desc = desc} end,
         value = p_empty * P'=' * p_empty * C(p_decimal + p_hexadecimal),
     }
