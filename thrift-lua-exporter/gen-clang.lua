@@ -118,15 +118,15 @@ local clang = require "luaclang-parser"
 
   CXCursor = {
     {CXCursor} = children(),
-    string = kind(),
+    CXCursorKind = kind(),
     string = name(),
     string = displayName(),
     CXCursor = parent(),
     {} = arguments(),
     CXType = type(),
-    string = access(),	{"public", "protected", "private", nil}
+    CX_CXXAccessSpecifier = access(),
     file, line_b, col_b, line_e, col_e = location(),
-    str = usr(),
+    string = usr(),
     CXCursor = referenced(),
     CXCursor = definition(),
     boolean = isStatic(),
@@ -136,6 +136,7 @@ local clang = require "luaclang-parser"
 
   CXType = {
     string = name(),
+    CXTypeKind = kind(),
     CXType = canonical(),
     CXType = pointee(),
     boolean = isPod(),
