@@ -91,9 +91,9 @@ local function writeDesc(f, desc, tab)
     tab = tab or ""
     desc = lib.Trim(desc, " \t\r\n")
     if string.find(desc, '\n') then
-        f:write(tab, "[[\n ", tab, desc, "\n", tab, "]]\n")
+        f:write(tab, "--[[\n ", tab, desc, "\n", tab, "]]\n")
     else
-        f:write(tab, "[[", desc, "]]\n")
+        f:write(tab, "--[[", desc, "]]\n")
     end
 end
 

@@ -44,103 +44,103 @@ local clang = require "luaclang-parser"
   }
 ]]
 
-[[
+--[[
  * Error codes returned by libclang routines.
  *
  * Zero (\c CXError_Success) is the only error code indicating success.  Other
  * error codes, including not yet assigned non-zero values, indicate errors.
 ]]
 clang.ErrorCode = {
-  [[* No error.]]
+  --[[* No error.]]
   Success = 0,
-  [[
+  --[[
    * A generic error code, no further details are available.
    *
    * Errors of this kind can get their own specific error codes in future
    * libclang versions.
   ]]
   Failure = 1,
-  [[* libclang crashed while performing the requested operation.]]
+  --[[* libclang crashed while performing the requested operation.]]
   Crashed = 2,
-  [[
+  --[[
    * The function detected that the arguments violate the function
    * contract.
   ]]
   InvalidArguments = 3,
-  [[* An AST deserialization error has occurred.]]
+  --[[* An AST deserialization error has occurred.]]
   ASTReadError = 4,
 }
 
-[[
+--[[
  * Describes the availability of a particular entity, which indicates
  * whether the use of this entity will result in a warning or error due to
  * it being deprecated or unavailable.
 ]]
 clang.AvailabilityKind = {
-  [[* The entity is available.]]
+  --[[* The entity is available.]]
   Available = 0,
-  [[
+  --[[
    * The entity is available, but has been deprecated (and its use is
    * not recommended).
   ]]
   Deprecated = 1,
-  [[* The entity is not available; any use of it will be an error.]]
+  --[[* The entity is not available; any use of it will be an error.]]
   NotAvailable = 2,
-  [[
+  --[[
    * The entity is available, but not accessible; any use of it will be
    * an error.
   ]]
   NotAccessible = 3,
 }
 
-[[
+--[[
  * Describes the exception specification of a cursor.
  *
  * A negative value indicates that the cursor is not a function declaration.
 ]]
 clang.Cursor_ExceptionSpecificationKind = {
-  [[* The cursor has no exception specification.]]
+  --[[* The cursor has no exception specification.]]
   ExceptionSpecificationKind_None = 0,
-  [[* The cursor has exception specification throw()]]
+  --[[* The cursor has exception specification throw()]]
   ExceptionSpecificationKind_DynamicNone = 1,
-  [[* The cursor has exception specification throw(T1, T2)]]
+  --[[* The cursor has exception specification throw(T1, T2)]]
   ExceptionSpecificationKind_Dynamic = 2,
-  [[* The cursor has exception specification throw(...).]]
+  --[[* The cursor has exception specification throw(...).]]
   ExceptionSpecificationKind_MSAny = 3,
-  [[* The cursor has exception specification basic noexcept.]]
+  --[[* The cursor has exception specification basic noexcept.]]
   ExceptionSpecificationKind_BasicNoexcept = 4,
-  [[* The cursor has exception specification computed noexcept.]]
+  --[[* The cursor has exception specification computed noexcept.]]
   ExceptionSpecificationKind_ComputedNoexcept = 5,
-  [[* The exception specification has not yet been evaluated.]]
+  --[[* The exception specification has not yet been evaluated.]]
   ExceptionSpecificationKind_Unevaluated = 6,
-  [[* The exception specification has not yet been instantiated.]]
+  --[[* The exception specification has not yet been instantiated.]]
   ExceptionSpecificationKind_Uninstantiated = 7,
-  [[* The exception specification has not been parsed yet.]]
+  --[[* The exception specification has not been parsed yet.]]
   ExceptionSpecificationKind_Unparsed = 8,
-  [[* The cursor has a __declspec(nothrow) exception specification.]]
+  --[[* The cursor has a __declspec(nothrow) exception specification.]]
   ExceptionSpecificationKind_NoThrow = 9,
 }
 
-[[* Describes the severity of a particular diagnostic.]]
+--[[* Describes the severity of a particular diagnostic.]]
 clang.DiagnosticSeverity = {
-  [[
+  --[[
    * A diagnostic that has been suppressed, e.g., by a command-line
    * option.
   ]]
   Ignored = 0,
-  [[
+  --[[
    * This diagnostic is a note that should be attached to the
    * previous (non-note) diagnostic.
   ]]
   Note = 1,
-  [[
+  --[[
    * This diagnostic indicates suspicious code that may not be
    * wrong.
   ]]
   Warning = 2,
-  [[* This diagnostic indicates that the code is ill-formed.]]
+  --[[* This diagnostic indicates that the code is ill-formed.]]
   Error = 3,
-  [[
+  --[[
    * This diagnostic indicates that the code is ill-formed such
    * that future parser recovery is unlikely to produce useful
    * results.
@@ -148,38 +148,38 @@ clang.DiagnosticSeverity = {
   Fatal = 4,
 }
 
-[[
+--[[
  * Describes the kind of error that occurred (if any) in a call to
  * \c clang_loadDiagnostics.
 ]]
 clang.LoadDiag_Error = {
-  [[* Indicates that no error occurred.]]
+  --[[* Indicates that no error occurred.]]
   None = 0,
-  [[
+  --[[
    * Indicates that an unknown error occurred while attempting to
    * deserialize diagnostics.
   ]]
   Unknown = 1,
-  [[
+  --[[
    * Indicates that the file containing the serialized diagnostics
    * could not be opened.
   ]]
   CannotLoad = 2,
-  [[
+  --[[
    * Indicates that the serialized diagnostics file is invalid or
    * corrupt.
   ]]
   InvalidFile = 3,
 }
 
-[[
+--[[
  * Options to control the display of diagnostics.
  *
  * The values in this enum are meant to be combined to customize the
  * behavior of \c clang_formatDiagnostic().
 ]]
 clang.DiagnosticDisplayOptions = {
-  [[
+  --[[
    * Display the source-location information where the
    * diagnostic was located.
    *
@@ -193,14 +193,14 @@ clang.DiagnosticDisplayOptions = {
    * This option corresponds to the clang flag \c -fshow-source-location.
   ]]
   DisplaySourceLocation = 1,
-  [[
+  --[[
    * If displaying the source-location information of the
    * diagnostic, also include the column number.
    *
    * This option corresponds to the clang flag \c -fshow-column.
   ]]
   DisplayColumn = 2,
-  [[
+  --[[
    * If displaying the source-location information of the
    * diagnostic, also include information about source ranges in a
    * machine-parsable format.
@@ -209,7 +209,7 @@ clang.DiagnosticDisplayOptions = {
    * \c -fdiagnostics-print-source-range-info.
   ]]
   DisplaySourceRanges = 4,
-  [[
+  --[[
    * Display the option name associated with this diagnostic, if any.
    *
    * The option name displayed (e.g., -Wconversion) will be placed in brackets
@@ -217,7 +217,7 @@ clang.DiagnosticDisplayOptions = {
    * \c -fdiagnostics-show-option.
   ]]
   DisplayOption = 8,
-  [[
+  --[[
    * Display the category number associated with this diagnostic, if any.
    *
    * The category number is displayed within brackets after the diagnostic text.
@@ -225,7 +225,7 @@ clang.DiagnosticDisplayOptions = {
    * \c -fdiagnostics-show-category=id.
   ]]
   DisplayCategoryId = 16,
-  [[
+  --[[
    * Display the category name associated with this diagnostic, if any.
    *
    * The category name is displayed within brackets after the diagnostic text.
@@ -235,7 +235,7 @@ clang.DiagnosticDisplayOptions = {
   DisplayCategoryName = 32,
 }
 
-[[
+--[[
  * Flags that control the creation of translation units.
  *
  * The enumerators in this enumeration type are meant to be bitwise
@@ -243,12 +243,12 @@ clang.DiagnosticDisplayOptions = {
  * constructing the translation unit.
 ]]
 clang.TranslationUnit_Flags = {
-  [[
+  --[[
    * Used to indicate that no special translation-unit options are
    * needed.
   ]]
   None = 0,
-  [[
+  --[[
    * Used to indicate that the parser should construct a "detailed"
    * preprocessing record, including all macro definitions and instantiations.
    *
@@ -259,7 +259,7 @@ clang.TranslationUnit_Flags = {
    * behavior of the preprocessor.
   ]]
   DetailedPreprocessingRecord = 1,
-  [[
+  --[[
    * Used to indicate that the translation unit is incomplete.
    *
    * When a translation unit is considered "incomplete", semantic
@@ -271,7 +271,7 @@ clang.TranslationUnit_Flags = {
    * intent of producing a precompiled header.
   ]]
   Incomplete = 2,
-  [[
+  --[[
    * Used to indicate that the translation unit should be built with an
    * implicit precompiled header for the preamble.
    *
@@ -286,7 +286,7 @@ clang.TranslationUnit_Flags = {
    * precompiled header to improve parsing performance.
   ]]
   PrecompiledPreamble = 4,
-  [[
+  --[[
    * Used to indicate that the translation unit should cache some
    * code-completion results with each reparse of the source file.
    *
@@ -295,7 +295,7 @@ clang.TranslationUnit_Flags = {
    * code-completion operations.
   ]]
   CacheCompletionResults = 8,
-  [[
+  --[[
    * Used to indicate that the translation unit will be serialized with
    * \c clang_saveTranslationUnit.
    *
@@ -303,14 +303,14 @@ clang.TranslationUnit_Flags = {
    * producing a precompiled header.
   ]]
   ForSerialization = 16,
-  [[
+  --[[
    * DEPRECATED: Enabled chained precompiled preambles in C++.
    *
    * Note: this is a *temporary* option that is available only while
    * we are testing C++ precompiled preamble support. It is deprecated.
   ]]
   CXXChainedPCH = 32,
-  [[
+  --[[
    * Used to indicate that function/method bodies should be skipped while
    * parsing.
    *
@@ -318,20 +318,20 @@ clang.TranslationUnit_Flags = {
    * ignoring the usages.
   ]]
   SkipFunctionBodies = 64,
-  [[
+  --[[
    * Used to indicate that brief documentation comments should be
    * included into the set of code completions returned from this translation
    * unit.
   ]]
   IncludeBriefCommentsInCodeCompletion = 128,
-  [[
+  --[[
    * Used to indicate that the precompiled preamble should be created on
    * the first parse. Otherwise it will be created on the first reparse. This
    * trades runtime on the first parse (serializing the preamble takes time) for
    * reduced runtime on the second parse (can now reuse the preamble).
   ]]
   CreatePreambleOnFirstParse = 256,
-  [[
+  --[[
    * Do not stop processing when fatal errors are encountered.
    *
    * When fatal errors are encountered while parsing a translation unit,
@@ -341,20 +341,20 @@ clang.TranslationUnit_Flags = {
    * as possible should be reported. Use this flag to enable this behavior.
   ]]
   KeepGoing = 512,
-  [[* Sets the preprocessor in a mode for parsing a single file only.]]
+  --[[* Sets the preprocessor in a mode for parsing a single file only.]]
   SingleFileParse = 1024,
-  [[
+  --[[
    * Used in combination with CXTranslationUnit_SkipFunctionBodies to
    * constrain the skipping of function bodies to the preamble.
    *
    * The function bodies of the main file are not skipped.
   ]]
   LimitSkipFunctionBodiesToPreamble = 2048,
-  [[* Used to indicate that attributed types should be included in CXType.]]
+  --[[* Used to indicate that attributed types should be included in CXType.]]
   IncludeAttributedTypes = 4096,
-  [[* Used to indicate that implicit attributes should be visited.]]
+  --[[* Used to indicate that implicit attributes should be visited.]]
   VisitImplicitAttributes = 8192,
-  [[
+  --[[
    * Used to indicate that non-errors from included files should be ignored.
    *
    * If set, clang_getDiagnosticSetFromTU() will not report e.g. warnings from
@@ -365,7 +365,7 @@ clang.TranslationUnit_Flags = {
   IgnoreNonErrorsFromIncludedFiles = 16384,
 }
 
-[[
+--[[
  * Flags that control how translation units are saved.
  *
  * The enumerators in this enumeration type are meant to be bitwise
@@ -373,18 +373,18 @@ clang.TranslationUnit_Flags = {
  * saving the translation unit.
 ]]
 clang.SaveTranslationUnit_Flags = {
-  [[* Used to indicate that no special saving options are needed.]]
+  --[[* Used to indicate that no special saving options are needed.]]
   None = 0,
 }
 
-[[
+--[[
  * Describes the kind of error that occurred (if any) in a call to
  * \c clang_saveTranslationUnit().
 ]]
 clang.SaveError = {
-  [[* Indicates that no error occurred while saving a translation unit.]]
+  --[[* Indicates that no error occurred while saving a translation unit.]]
   None = 0,
-  [[
+  --[[
    * Indicates that an unknown error occurred while attempting to save
    * the file.
    *
@@ -392,7 +392,7 @@ clang.SaveError = {
    * write the file.
   ]]
   Unknown = 1,
-  [[
+  --[[
    * Indicates that errors during translation prevented this attempt
    * to save the translation unit.
    *
@@ -400,14 +400,14 @@ clang.SaveError = {
    * extracted using \c clang_getNumDiagnostics() and \c clang_getDiagnostic().
   ]]
   TranslationErrors = 2,
-  [[
+  --[[
    * Indicates that the translation unit to be saved was somehow
    * invalid (e.g., NULL).
   ]]
   InvalidTU = 3,
 }
 
-[[
+--[[
  * Flags that control the reparsing of translation units.
  *
  * The enumerators in this enumeration type are meant to be bitwise
@@ -415,11 +415,11 @@ clang.SaveError = {
  * reparsing the translation unit.
 ]]
 clang.Reparse_Flags = {
-  [[* Used to indicate that no special reparsing options are needed.]]
+  --[[* Used to indicate that no special reparsing options are needed.]]
   None = 0,
 }
 
-[[* Categorizes how memory is being used by a translation unit.]]
+--[[* Categorizes how memory is being used by a translation unit.]]
 clang.TUResourceUsageKind = {
   AST = 1,
   Identifiers = 2,
@@ -441,44 +441,44 @@ clang.TUResourceUsageKind = {
   Last = 14,
 }
 
-[[* Describe the linkage of the entity referred to by a cursor.]]
+--[[* Describe the linkage of the entity referred to by a cursor.]]
 clang.LinkageKind = {
-  [[
+  --[[
    This value indicates that no linkage information is available
    * for a provided CXCursor.
   ]]
   Invalid = 0,
-  [[
+  --[[
    * This is the linkage for variables, parameters, and so on that
    *  have automatic storage.  This covers normal (non-extern) local variables.
   ]]
   NoLinkage = 1,
-  [[This is the linkage for static variables and static functions.]]
+  --[[This is the linkage for static variables and static functions.]]
   Internal = 2,
-  [[
+  --[[
    This is the linkage for entities with external linkage that live
    * in C++ anonymous namespaces.
   ]]
   UniqueExternal = 3,
-  [[This is the linkage for entities with true, external linkage.]]
+  --[[This is the linkage for entities with true, external linkage.]]
   External = 4,
 }
 
 clang.VisibilityKind = {
-  [[
+  --[[
    This value indicates that no visibility information is available
    * for a provided CXCursor.
   ]]
   Invalid = 0,
-  [[Symbol not seen by the linker.]]
+  --[[Symbol not seen by the linker.]]
   Hidden = 1,
-  [[Symbol seen by the linker but resolves to a symbol inside this object.]]
+  --[[Symbol seen by the linker but resolves to a symbol inside this object.]]
   Protected = 2,
-  [[Symbol seen by the linker and acts like a normal symbol.]]
+  --[[Symbol seen by the linker and acts like a normal symbol.]]
   Default = 3,
 }
 
-[[* Describe the "language" of the entity referred to by a cursor.]]
+--[[* Describe the "language" of the entity referred to by a cursor.]]
 clang.LanguageKind = {
   Invalid = 0,
   C = 1,
@@ -486,7 +486,7 @@ clang.LanguageKind = {
   CPlusPlus = 3,
 }
 
-[[
+--[[
  * Describe the "thread-local storage (TLS) kind" of the declaration
  * referred to by a cursor.
 ]]
@@ -496,16 +496,16 @@ clang.TLSKind = {
   Static = 2,
 }
 
-[[* Describes the kind of type]]
+--[[* Describes the kind of type]]
 clang.TypeKind = {
-  [[* Represents an invalid type (e.g., where no type is available).]]
+  --[[* Represents an invalid type (e.g., where no type is available).]]
   Invalid = 0,
-  [[
+  --[[
    * A type whose specific kind is not exposed via this
    * interface.
   ]]
   Unexposed = 1,
-  [[Builtin types]]
+  --[[Builtin types]]
   Void = 2,
   Bool = 3,
   Char_U = 4,
@@ -564,15 +564,15 @@ clang.TypeKind = {
   DependentSizedArray = 116,
   MemberPointer = 117,
   Auto = 118,
-  [[
+  --[[
    * Represents a type that was referred to using an elaborated type keyword.
    *
    * E.g., struct S, or via a qualified name, e.g., N::M::type, or both.
   ]]
   Elaborated = 119,
-  [[OpenCL PipeType.]]
+  --[[OpenCL PipeType.]]
   Pipe = 120,
-  [[OpenCL builtin types.]]
+  --[[OpenCL builtin types.]]
   OCLImage1dRO = 121,
   OCLImage1dArrayRO = 122,
   OCLImage1dBufferRO = 123,
@@ -631,7 +631,7 @@ clang.TypeKind = {
   ExtVector = 176,
 }
 
-[[* Describes the calling convention of a function type]]
+--[[* Describes the calling convention of a function type]]
 clang.CallingConv = {
   Default = 0,
   C = 1,
@@ -644,7 +644,7 @@ clang.CallingConv = {
   X86RegCall = 8,
   IntelOclBicc = 9,
   Win64 = 10,
-  [[Alias for compatibility with older versions of API.]]
+  --[[Alias for compatibility with older versions of API.]]
   X86_64Win64 = 10,
   X86_64SysV = 11,
   X86VectorCall = 12,
@@ -656,7 +656,7 @@ clang.CallingConv = {
   Unexposed = 200,
 }
 
-[[
+--[[
  * Describes the kind of a template argument.
  *
  * See the definition of llvm::clang::TemplateArgument::ArgKind for full
@@ -672,36 +672,36 @@ clang.TemplateArgumentKind = {
   TemplateExpansion = 6,
   Expression = 7,
   Pack = 8,
-  [[Indicates an error case, preventing the kind from being deduced.]]
+  --[[Indicates an error case, preventing the kind from being deduced.]]
   Invalid = 9,
 }
 
 clang.TypeNullabilityKind = {
-  [[* Values of this type can never be null.]]
+  --[[* Values of this type can never be null.]]
   NonNull = 0,
-  [[* Values of this type can be null.]]
+  --[[* Values of this type can be null.]]
   Nullable = 1,
-  [[
+  --[[
    * Whether values of this type can be null is (explicitly)
    * unspecified. This captures a (fairly rare) case where we
    * can't conclude anything about the nullability of the type even
    * though it has been considered.
   ]]
   Unspecified = 2,
-  [[* Nullability is not applicable to this type.]]
+  --[[* Nullability is not applicable to this type.]]
   Invalid = 3,
 }
 
 clang.RefQualifierKind = {
-  [[No ref-qualifier was provided.]]
+  --[[No ref-qualifier was provided.]]
   None = 0,
-  [[An lvalue ref-qualifier was provided (\c &).]]
+  --[[An lvalue ref-qualifier was provided (\c &).]]
   LValue = 1,
-  [[An rvalue ref-qualifier was provided (\c &&).]]
+  --[[An rvalue ref-qualifier was provided (\c &&).]]
   RValue = 2,
 }
 
-[[
+--[[
  * Represents the C++ access control level to a base class for a
  * cursor with kind CX_CXXBaseSpecifier.
 ]]
@@ -712,7 +712,7 @@ clang._CXXAccessSpecifier = {
   CXXPrivate = 3,
 }
 
-[[
+--[[
  * Represents the storage classes as declared in the source. CX_SC_Invalid
  * was added for the case that the passed cursor in not a declaration.
 ]]
@@ -727,7 +727,7 @@ clang._StorageClass = {
   SC_Register = 7,
 }
 
-[[
+--[[
  * Describes how the traversal of the children of a particular
  * cursor should proceed after visiting a particular child cursor.
  *
@@ -735,21 +735,21 @@ clang._StorageClass = {
  * \c CXCursorVisitor to indicate how clang_visitChildren() proceed.
 ]]
 clang.ChildVisitResult = {
-  [[* Terminates the cursor traversal.]]
+  --[[* Terminates the cursor traversal.]]
   Break = 0,
-  [[
+  --[[
    * Continues the cursor traversal with the next sibling of
    * the cursor just visited, without visiting its children.
   ]]
   Continue = 1,
-  [[
+  --[[
    * Recursively traverse the children of this cursor, using
    * the same visitor and client data.
   ]]
   Recurse = 2,
 }
 
-[[
+--[[
  * Properties for the printing policy.
  *
  * See \c clang::PrintingPolicy for more information.
@@ -812,17 +812,17 @@ clang.ObjCDeclQualifierKind = {
 }
 
 clang.NameRefFlags = {
-  [[
+  --[[
    * Include the nested-name-specifier, e.g. Foo:: in x.Foo::y, in the
    * range.
   ]]
   WantQualifier = 1,
-  [[
+  --[[
    * Include the explicit template arguments, e.g. \<int> in x.f<int>,
    * in the range.
   ]]
   WantTemplateArgs = 2,
-  [[
+  --[[
    * If the name is non-contiguous, return the full spanning range.
    *
    * Non-contiguous names occur in Objective-C when a selector with two or more
@@ -836,19 +836,19 @@ clang.NameRefFlags = {
 }
 
 clang.TokenKind = {
-  [[* A token that contains some kind of punctuation.]]
+  --[[* A token that contains some kind of punctuation.]]
   Punctuation = 0,
-  [[* A language keyword.]]
+  --[[* A language keyword.]]
   Keyword = 1,
-  [[* An identifier (that is not a keyword).]]
+  --[[* An identifier (that is not a keyword).]]
   Identifier = 2,
-  [[* A numeric, string, or character literal.]]
+  --[[* A numeric, string, or character literal.]]
   Literal = 3,
-  [[* A comment.]]
+  --[[* A comment.]]
   Comment = 4,
 }
 
-[[
+--[[
  * Describes a single piece of text within a code-completion string.
  *
  * Each "chunk" within a code-completion string (\c CXCompletionString) is
@@ -856,7 +856,7 @@ clang.TokenKind = {
  * should be interpreted by the client or is another completion string.
 ]]
 clang.CompletionChunkKind = {
-  [[
+  --[[
    * A code-completion string that describes "optional" text that
    * could be a part of the template (but is not required).
    *
@@ -890,7 +890,7 @@ clang.CompletionChunkKind = {
    *     function "f" would have all of the parameters.
   ]]
   Optional = 0,
-  [[
+  --[[
    * Text that a user would be expected to type to get this
    * code-completion result.
    *
@@ -901,7 +901,7 @@ clang.CompletionChunkKind = {
    * chunk.
   ]]
   TypedText = 1,
-  [[
+  --[[
    * Text that should be inserted as part of a code-completion result.
    *
    * A "text" chunk represents text that is part of the template to be
@@ -909,7 +909,7 @@ clang.CompletionChunkKind = {
    * be selected.
   ]]
   Text = 2,
-  [[
+  --[[
    * Placeholder text that should be replaced by the user.
    *
    * A "placeholder" chunk marks a place where the user should insert text
@@ -920,7 +920,7 @@ clang.CompletionChunkKind = {
    * the user replaces the placeholder with real code.
   ]]
   Placeholder = 3,
-  [[
+  --[[
    * Informative text that should be displayed but never inserted as
    * part of the template.
    *
@@ -930,7 +930,7 @@ clang.CompletionChunkKind = {
    * by code completion.
   ]]
   Informative = 4,
-  [[
+  --[[
    * Text that describes the current parameter when code-completion is
    * referring to function call, message send, or template specialization.
    *
@@ -950,31 +950,31 @@ clang.CompletionChunkKind = {
    * "current parameter" chunk to "int y".
   ]]
   CurrentParameter = 5,
-  [[
+  --[[
    * A left parenthesis ('('), used to initiate a function call or
    * signal the beginning of a function parameter list.
   ]]
   LeftParen = 6,
-  [[
+  --[[
    * A right parenthesis (')'), used to finish a function call or
    * signal the end of a function parameter list.
   ]]
   RightParen = 7,
-  [[* A left bracket ('[').]]
+  --[[* A left bracket ('[').]]
   LeftBracket = 8,
-  [[* A right bracket (']').]]
+  --[[* A right bracket (']').]]
   RightBracket = 9,
-  [[* A left brace ('{').]]
+  --[[* A left brace ('{').]]
   LeftBrace = 10,
-  [[* A right brace ('}').]]
+  --[[* A right brace ('}').]]
   RightBrace = 11,
-  [[* A left angle bracket ('<').]]
+  --[[* A left angle bracket ('<').]]
   LeftAngle = 12,
-  [[* A right angle bracket ('>').]]
+  --[[* A right angle bracket ('>').]]
   RightAngle = 13,
-  [[* A comma separator (',').]]
+  --[[* A comma separator (',').]]
   Comma = 14,
-  [[
+  --[[
    * Text that specifies the result type of a given result.
    *
    * This special kind of informative chunk is not meant to be inserted into
@@ -982,22 +982,22 @@ clang.CompletionChunkKind = {
    * expression using the given completion string would have.
   ]]
   ResultType = 15,
-  [[* A colon (':').]]
+  --[[* A colon (':').]]
   Colon = 16,
-  [[* A semicolon (';').]]
+  --[[* A semicolon (';').]]
   SemiColon = 17,
-  [[* An '=' sign.]]
+  --[[* An '=' sign.]]
   Equal = 18,
-  [[* Horizontal space (' ').]]
+  --[[* Horizontal space (' ').]]
   HorizontalSpace = 19,
-  [[
+  --[[
    * Vertical space ('\\n'), after which it is generally a good idea to
    * perform indentation.
   ]]
   VerticalSpace = 20,
 }
 
-[[
+--[[
  * Flags that can be passed to \c clang_codeCompleteAt() to
  * modify its behavior.
  *
@@ -1005,28 +1005,28 @@ clang.CompletionChunkKind = {
  * provide multiple options to \c clang_codeCompleteAt().
 ]]
 clang.CodeComplete_Flags = {
-  [[
+  --[[
    * Whether to include macros within the set of code
    * completions returned.
   ]]
   IncludeMacros = 1,
-  [[
+  --[[
    * Whether to include code patterns for language constructs
    * within the set of code completions, e.g., for loops.
   ]]
   IncludeCodePatterns = 2,
-  [[
+  --[[
    * Whether to include brief documentation within the set of code
    * completions returned.
   ]]
   IncludeBriefComments = 4,
-  [[
+  --[[
    * Whether to speed up completion by omitting top- or namespace-level entities
    * defined in the preamble. There's no guarantee any particular entity is
    * omitted. This may be useful if the headers are indexed externally.
   ]]
   SkipPreamble = 8,
-  [[
+  --[[
    * Whether to include completions with small
    * fix-its, e.g. change '.' to '->' on member access, etc.
   ]]
@@ -1043,7 +1043,7 @@ clang.EvalResultKind = {
   UnExposed = 0,
 }
 
-[[
+--[[
  \defgroup CINDEX_HIGH Higher level API functions
  *
  * @{
@@ -1054,11 +1054,11 @@ clang.VisitorResult = {
 }
 
 clang.Result = {
-  [[* Function returned successfully.]]
+  --[[* Function returned successfully.]]
   Success = 0,
-  [[* One of the parameters was invalid for the function.]]
+  --[[* One of the parameters was invalid for the function.]]
   Invalid = 1,
-  [[
+  --[[
    * The function was terminated by a callback (e.g. it returned
    * CXVisit_Break)
   ]]
@@ -1128,9 +1128,9 @@ clang.IdxObjCContainerKind = {
 }
 
 clang.IdxEntityRefKind = {
-  [[* The entity is referenced directly in user's code.]]
+  --[[* The entity is referenced directly in user's code.]]
   Direct = 1,
-  [[
+  --[[
    * An implicit reference, e.g. a reference of an Objective-C method
    * via the dot syntax.
   ]]
@@ -1138,27 +1138,27 @@ clang.IdxEntityRefKind = {
 }
 
 clang.IndexOptFlags = {
-  [[* Used to indicate that no special indexing options are needed.]]
+  --[[* Used to indicate that no special indexing options are needed.]]
   None = 0,
-  [[
+  --[[
    * Used to indicate that IndexerCallbacks#indexEntityReference should
    * be invoked for only one reference of an entity per source file that does
    * not also include a declaration/definition of the entity.
   ]]
   SuppressRedundantRefs = 1,
-  [[
+  --[[
    * Function-local symbols should be indexed. If this is not set
    * function-local symbols will be ignored.
   ]]
   IndexFunctionLocalSymbols = 2,
-  [[
+  --[[
    * Implicit function/class template instantiations should be indexed.
    * If this is not set, implicit instantiations will be ignored.
   ]]
   IndexImplicitTemplateInstantiations = 4,
-  [[* Suppress all compiler warnings when parsing for indexing.]]
+  --[[* Suppress all compiler warnings when parsing for indexing.]]
   SuppressWarnings = 8,
-  [[
+  --[[
    * Skip a function/method body that was already parsed during an
    * indexing session associated with a \c CXIndexAction object.
    * Bodies in system headers are always skipped.
