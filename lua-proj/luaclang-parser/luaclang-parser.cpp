@@ -223,7 +223,7 @@ static int l_codeComplete(lua_State *L) {
                 lua_createtable(L, 0, 2);
                 pushCXString(L, clang_getCompletionChunkText(com, j));
                 lua_setfield(L, -2, "text");
-                lua_pushnumber(L, clang_getCompletionChunkKind(com, j));
+                lua_pushinteger(L, clang_getCompletionChunkKind(com, j));
                 lua_setfield(L, -2, "kind");
                 lua_rawseti(L, -2, j+1);
             }
@@ -289,7 +289,15 @@ static int l_children(lua_State *L) {
 
 static int l_kind(lua_State *L) {
     CXCursor cur = toCursor(L, 1);
-    lua_pushnumber(L, clang_getCursorKind(cur));
+    lua_pushinteger(L, clang_getCursorKind(cur));
+    return 1;
+}
+
+static int l_spelling(lua_State* L) {
+    CXCursor cur = toCursor(L, 1);
+    CXString str = clang_getCursorKindSpelling(clang_getCursorKind(cur));
+    lua_pushstring(L, clang_getCString(str));
+    clang_disposeString(str);
     return 1;
 }
 
@@ -341,7 +349,7 @@ static int l_type(lua_State *L) {
 
 static int l_access(lua_State *L) {
     CXCursor cur = toCursor(L, 1);
-    lua_pushnumber(L, clang_getCXXAccessSpecifier(cur));
+    lua_pushinteger(L, clang_getCXXAccessSpecifier(cur));
     return 1;
 }
 
@@ -424,6 +432,7 @@ static int l_cursorEqual(lua_State *L) {
 static luaL_Reg cursor_functions[] = {
     {"children", l_children},
     {"kind", l_kind},
+    {"spelling", l_spelling},
     {"name", l_name},
     {"__tostring", l_name},
     {"displayName", l_displayName},
@@ -455,7 +464,7 @@ static int l_typeToString(lua_State *L) {
 
 static int l_typeKind(lua_State* L) {
     CXType type = toType(L, 1);
-    lua_pushnumber(L, type.kind);
+    lua_pushinteger(L, type.kind);
     return 1;
 }
 

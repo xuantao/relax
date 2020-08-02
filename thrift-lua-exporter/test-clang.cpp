@@ -1,6 +1,7 @@
 /* test file */
 #include <stdio.h>
 //#include <Luna.h>
+#include <functional>
 
 #ifdef CLANG_PARSER
 #define LUA_EXPORT __attribute__((annotate("xlua")))
@@ -14,7 +15,11 @@ struct lua_State;
 namespace detail
 {
 
-struct LUA_EXPORT Storage {
+struct Object {};
+
+struct LUA_EXPORT Storage : Object {
+    Storage() = default;
+
     LUA_EXPORT int a;
     LUA_EXPORT void print();
     LUA_EXPORT inline void print2();
@@ -32,6 +37,9 @@ LUA_EXPORT auto do_work(int a, lua_State* l) -> int {
 }
 
 LUA_EXPORT int do_work2();
+
+LUA_EXPORT void CallBack(const std::function<void(int)>& call) {
+}
 
 int main(int argc, char* argv[])
 {

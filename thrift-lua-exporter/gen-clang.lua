@@ -28,7 +28,6 @@ local c_tag = (P'/*<@' * p_space * C(p_reference) * p_space * P'>*/')^-1/1      
 local c_may_idenenity = p_identity^-1 / 1
 
 local function prefer(sur, pre)
-    --print(sur, pre)
     return sur and sur ~= "" and sur or pre
 end
 
@@ -39,9 +38,12 @@ local cs = P {
         enum = c_annotation * p_space * P'enum' * p_space * p_empty * c_may_idenenity * p_empty * V'body' * p_empty * c_may_idenenity * p_empty * P';' /
             function (desc, id_1, v, id_2) return {"enum", prefer(id_2, id_1), {desc = desc, vars = v}} end,
         body = P'{' * p_space * V'vars' * p_empty * P'}',
+
         vars = Ct(V'var'^0),
-        var = p_space * c_annotation * p_space * C(p_identity) * (V'value'^-1/1) * p_empty * P','^0 * S' \t'^0 * c_annotation /
+        var = V'var1' + V'var2',
+        var1 = c_annotation * p_space * C(p_identity) * (V'value'^-1/1) * p_empty * P','^0 * S' \t'^0 * c_annotation /
             function(p_d, id, v, s_d) return {id = id, value = v, desc = prefer(s_d, p_d)} end,
+        var2 = (p_multi_line_comment + p_comment + S' \t\r\n'^1 - V'var1')^0 * V'var1',
         value = p_empty * P'=' * p_empty * C(p_hexadecimal + p_decimal + p_reference),
     },
 }
@@ -74,7 +76,7 @@ local function parseFile(files)
 end
 
 local function trimEnumName(name)
-    local s = string.gsub(name, "^(CX)", "")
+    local s = string.gsub(name, "^(CX_?)", "")
     return s
 end
 
@@ -93,6 +95,7 @@ local function writeDesc(f, desc, tab)
     if string.find(desc, '\n') then
         f:write(tab, "--[[\n ", tab, desc, "\n", tab, "]]\n")
     else
+        desc = lib.Trim(desc, '%[%]')
         f:write(tab, "--[[", desc, "]]\n")
     end
 end
@@ -117,12 +120,13 @@ local clang = require "luaclang-parser"
   },
 
   CXCursor = {
-    {CXCursor} = children(),
+    {CXCursor, ...} = children(),
     CXCursorKind = kind(),
     string = name(),
     string = displayName(),
+    string = spelling(),
     CXCursor = parent(),
-    {} = arguments(),
+    {CXCursor, ...} = arguments(),
     CXType = type(),
     CX_CXXAccessSpecifier = access(),
     file, line_b, col_b, line_e, col_e = location(),
@@ -187,3 +191,4 @@ local function doExport()
 end
 
 doExport()
+
