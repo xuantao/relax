@@ -147,55 +147,6 @@ function onNamespace(cursor)
     return {"namespace", cursor:name(), elements = eles}
 end
 
-function visitCursor(c)
-    local f, lb, cb, le, ce = c:location()
-    if f == test_file then
-        local kind = c:kind()
-        print(tab, c:kind(), c:spelling(), c:name(), c:displayName(), c:usr(), table.concat({f, lb, cb, le, ce}, '-'))
-
-        if kind == clang.CursorKind.FunctionDecl then
-            onFunction(c)
-        elseif kind == clang.CursorKind.StructDecl or kind == clang.CursorKind.ClassDecl then
-            onClass(c)
-        elseif kind == clang.CursorKind.EnumDecl then
-            onEnum(c)
-        elseif kind == clang.CursorKind.FunctionTemplate then
-            --TODO:
-        elseif kind == clang.CursorKind.ClassTemplate then
-            --TODO:
-        end
-
-        if c:kind() == "ParmDecl" then
-            local type = c:type()
-            print(tab, "type", type:name())
-            local can = type:canonical()
-            if can then
-                print(tab, "canonical", can:name())
-            end
-
-            local pointee = type:pointee()
-            if pointee then
-                print(tab, "pointee", pointee:name())
-            end
-        end
-
-        
-
-    end
-
-    local children = c:children() or {}
-    for _, child in ipairs(children) do
-        local f = child:location()
-        if f == test_file then
-            tab = tab + 1
-            visitCursor(child)
-            tab = tab - 1
-        end
-    end
-    visitTable(c:children(), visitCursor)
-end
-
-
 local test_args = {
     "-std=c++14",
     --"-ast-dump"
