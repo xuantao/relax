@@ -295,7 +295,7 @@ static int l_kind(lua_State *L) {
 
 static int l_spelling(lua_State* L) {
     CXCursor cur = toCursor(L, 1);
-    CXString str = clang_getCursorKindSpelling(clang_getCursorKind(cur));
+    CXString str = clang_getCursorSpelling(cur);
     lua_pushstring(L, clang_getCString(str));
     clang_disposeString(str);
     return 1;
@@ -333,6 +333,53 @@ static int l_arguments(lua_State *L) {
     for (unsigned int i=0; i<nArgs; i++) {
         CXCursor *arg = newCursor(L);
         *arg = clang_Cursor_getArgument(cur, i);
+        lua_rawseti(L, -2, i+1);
+    }
+    return 1;
+}
+
+static int lua_specializedTemplate(lua_State* L) {
+    CXCursor cur = toCursor(L, 1);
+    CXCursor tmp = clang_getSpecializedCursorTemplate(cur);
+    if (clang_Cursor_isNull(tmp))
+        lua_pushnil(L);
+    else
+        *newCursor(L) = tmp;
+    return 1;
+}
+
+static int l_templateArguments(lua_State* L) {
+    CXCursor cur = toCursor(L, 1);
+    int nArgs = clang_Cursor_getNumTemplateArguments(cur);
+    if (nArgs == -1)
+        return 0;
+
+    lua_createtable(L, nArgs, 0);
+    for (int i=0; i<nArgs; i++) {
+        CXType type;
+        CXTemplateArgumentKind kind = clang_Cursor_getTemplateArgumentKind(cur, i);
+        lua_createtable(L, 2, 0);
+        lua_pushinteger(L, kind);
+        lua_setfield(L, -2, "kind");
+
+        switch (kind)
+        {
+        case CXTemplateArgumentKind_Integral:
+            lua_pushinteger(L, clang_Cursor_getTemplateArgumentValue(cur, i));
+            break;
+        case CXTemplateArgumentKind_Null:
+        case CXTemplateArgumentKind_Invalid:
+            lua_pushnil(L);
+            break;
+        default:
+            type = clang_Cursor_getTemplateArgumentType(cur, i);
+            if (type.kind != CXType_Invalid)
+                *newType(L) = type;
+            else
+                lua_pushnil(L);
+            break;
+        }
+        lua_setfield(L, -2, "value");
         lua_rawseti(L, -2, i+1);
     }
     return 1;
@@ -433,9 +480,9 @@ static int l_underlyingType(lua_State* L) {
     CXCursor cur = toCursor(L, 1);
     CXType type = clang_getTypedefDeclUnderlyingType(cur);
     if (type.kind != CXType_Invalid)
-        lua_pushnil(L);
-    else
         *newType(L) = type;
+    else
+        lua_pushnil(L);
     return 1;
 }
 
@@ -448,6 +495,8 @@ static luaL_Reg cursor_functions[] = {
     {"displayName", l_displayName},
     {"parent", l_parent},
     {"arguments", l_arguments},
+    {"specializedTemplate", lua_specializedTemplate},
+    {"templateArguments", l_templateArguments},
     {"type", l_type},
     {"access", l_access},
     {"location", l_location},

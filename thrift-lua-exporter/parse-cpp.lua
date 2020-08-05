@@ -52,6 +52,18 @@ parseType = function(type)
 
     elseif kind == clang.TypeKind.Elaborated then
         parseType(type:namedType())
+    elseif kind == clang.TypeKind.Unexposed then
+        local cur = type:declaration()
+        local tmp = cur:specializedTemplate()
+        print("clang.TypeKind.Unexposed", getKey(clang.CursorKind, cur:kind()), cur:spelling(), tmp:spelling(), getKey(clang.CursorKind,tmp:kind()))
+        local tmpType = tmp:type()
+        --print("xxxxxxxx", tmpType:kind(), tmpType:spelling())
+        --[[
+        local tmpArgs = tmp:templateArguments()
+        for _, v in ipairs(tmpArgs) do
+            print(v.kind, v.value);
+        end
+        ]]
     end
 
     local canonical = type:canonical()
