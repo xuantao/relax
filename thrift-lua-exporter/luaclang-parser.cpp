@@ -429,6 +429,16 @@ static int l_cursorEqual(lua_State *L) {
     return 1;
 }
 
+static int l_underlyingType(lua_State* L) {
+    CXCursor cur = toCursor(L, 1);
+    CXType type = clang_getTypedefDeclUnderlyingType(cur);
+    if (type.kind != CXType_Invalid)
+        lua_pushnil(L);
+    else
+        *newType(L) = type;
+    return 1;
+}
+
 static luaL_Reg cursor_functions[] = {
     {"children", l_children},
     {"kind", l_kind},
@@ -447,6 +457,7 @@ static luaL_Reg cursor_functions[] = {
     {"isStatic", l_isStatic},
     {"isVirtual", l_isVirtual},
     {"resultType", l_resultType},
+    {"underlyingType", l_underlyingType},
     {"__eq", l_cursorEqual},
     {NULL, NULL}
 };
@@ -465,6 +476,14 @@ static int l_typeToString(lua_State *L) {
 static int l_typeKind(lua_State* L) {
     CXType type = toType(L, 1);
     lua_pushinteger(L, type.kind);
+    return 1;
+}
+
+static int l_typeSpelling(lua_State* L) {
+    CXType type = toType(L, 1);
+    CXString str = clang_getTypeSpelling(type);
+    lua_pushstring(L, clang_getCString(str));
+    clang_disposeString(str);
     return 1;
 }
 
@@ -511,6 +530,32 @@ static int l_pointee(lua_State *L) {
     return 1;
 }
 
+static int l_elementType(lua_State* L) {
+    CXType type = toType(L, 1);
+    CXType element = clang_getElementType(type);
+    if (element.kind == CXType_Invalid)
+        lua_pushnil(L);
+    else
+        *newType(L) = element;
+    return 1;
+}
+
+static int l_namedType(lua_State* L) {
+    CXType type = toType(L, 1);
+    CXType named = clang_Type_getNamedType(type);
+    if (named.kind == CXType_Invalid)
+        lua_pushnil(L);
+    else
+        *newType(L) = named;
+    return 1;
+}
+
+static int l_arraySize(lua_State* L) {
+    CXType type = toType(L, 1);
+    lua_pushinteger(L, clang_getArraySize(type));
+    return 1;
+}
+
 static int l_isConst(lua_State *L) {
     CXType type = toType(L, 1);
     int isConst = clang_isConstQualifiedType(type);
@@ -518,14 +563,26 @@ static int l_isConst(lua_State *L) {
     return 1;
 }
 
+static int l_isVolatile(lua_State* L) {
+    CXType type = toType(L, 1);
+    int isVolatile = clang_isVolatileQualifiedType(type);
+    lua_pushboolean(L, isVolatile);
+    return 1;
+}
+
 static luaL_Reg type_functions[] = {
     {"__tostring", l_typeToString},
     {"name", l_typeToString},
     {"kind", l_typeKind},
+    {"spelling", l_typeSpelling},
     {"canonical", l_canonical},
     {"pointee", l_pointee},
+    {"element", l_elementType},
+    {"namedType", l_namedType},
+    {"arraySize", l_arraySize},
     {"isPod", l_isPod},
     {"isConst", l_isConst},
+    {"isVolatile", l_isVolatile},
     {"declaration", l_declaration},
     {"__eq", l_typeEq},
     {NULL, NULL}
@@ -538,7 +595,6 @@ void newMetatable(lua_State *L, const char * name, luaL_Reg *reg) {
     luaL_checkversion(L);
     lua_createtable(L, 0, 0);
     luaL_setfuncs(L, reg, 0);
-    //lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");
 }
 

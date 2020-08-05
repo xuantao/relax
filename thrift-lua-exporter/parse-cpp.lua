@@ -1,33 +1,28 @@
 local lib = require "lib"
 local clang = require "clang"
+local test_file = "test-clang.cpp"
+local ret = {}
 
-local logTable
-function logTable(t)
-    print'{'
+local TypeTag = {
+    None = 1,
+    Builtin = 2,
+    Enum = 3,
+    Complex = 4,
+    Pointer = 5,            -- 指针
+    Array = 6,              -- 数组
+    FunctionPointer = 7,    --
+    MemberPointer = 8,      --
+    LValueReference = 9,    -- 左值引用
+    RValueReference = 10,   -- 右值引用
+}
+
+local function getKey(t, value)
     for k, v in pairs(t) do
-        if type(v) == "table" then
-            print(k, '= {')
-            logTable(v)
-            print('}')
-        else
-            print('', k, v)
+        if v == value then
+            return k
         end
     end
-    print'}'
 end
-
-local function visitTable(t, f)
-    if not t then return end
-
-    for k, v in pairs(t) do
-        f(v)
-    end
-end
-
-local test_file = "test-clang.cpp"
-local visitCursor
-local tab = 1
-local ret = {}
 
 local function getTag(cursor)
     local tag
@@ -38,19 +33,60 @@ local function getTag(cursor)
     end
 end
 
+local parseType
+parseType = function(type)
+    local kind = type:kind()
+
+    local tag = TypeTag.None
+    local element
+    if kind == clang.TypeKind.Pointer then
+        --return {surfex = TypeSurfex.Pointer, spelling = type:spelling(), element = parseType(type:element())}
+        tag = TypeTag.Pointer
+        element = parseType(type:pointee())
+    elseif kind == clang.TypeKind.LValueReference then
+        tag = TypeTag.LValueReference
+        element = parseType(type:pointee())
+        --local p = type:pointee()
+        --print(getKey(clang.TypeKind, p:kind()), p:spelling())
+    elseif kind == clang.TypeKind.RValueReference then
+
+    elseif kind == clang.TypeKind.Elaborated then
+        parseType(type:namedType())
+    end
+
+    local canonical = type:canonical()
+    print(getKey(clang.TypeKind, kind), type:spelling(), canonical and canonical:spelling() or "none", getKey(clang.TypeKind, canonical and canonical:kind()))
+
+    if kind == clang.TypeKind.Typedef or
+        kind == clang.TypeKind.Pointer or
+        kind == clang.TypeKind.Complex or
+        kind == clang.TypeKind.LValueReference or
+        kind == clang.TypeKind.RValueReference or
+        kind == clang.TypeKind.Record or
+        kind == clang.TypeKind.ConstantArray or
+        kind == clang.TypeKind.IncompleteArray or
+        kind == clang.TypeKind.Vector or
+        kind == clang.TypeKind.VariableArray or
+        kind == clang.TypeKind.DependentSizedArray then
+        local elemnet = type:element()
+        print("element", elemnet and elemnet:spelling() or "unknown")
+    end
+    return type:name()
+end
+
 local function onVar(cursor)
     local type = cursor:type()
-    return {"var", cursor:name(), {type = type:name(), tag = getTag(cursor)}}
+    return {"var", cursor:name(), {type = parseType(type), tag = getTag(cursor)}}
 end
 
 local function onField(cursor)
     local type = cursor:type()
-    return {"field", cursor:name(), {type = type:name(), access = cursor:access(), tag = getTag(cursor)}}
+    return {"field", cursor:name(), {type = parseType(type), access = cursor:access(), tag = getTag(cursor)}}
 end
 
 local function onArg(cursor)
     local type = cursor:type()
-    return {"arg", cursor:name(), {type = type:name()}}
+    return {"arg", cursor:name(), {type = parseType(type)}}
 end
 
 local function onFunction(cursor)
@@ -59,7 +95,7 @@ local function onFunction(cursor)
     for _, arg in ipairs(cursor:arguments()) do
         table.insert(args, onArg(arg))
     end
-    return {"function", cursor:name(), {ret = ret_type:name(), args = args, tag = getTag(cursor)}}
+    return {"function", cursor:name(), {ret = parseType(ret_type), args = args, tag = getTag(cursor)}}
 end
 
 local function onCunstructor(cursor)
@@ -213,4 +249,5 @@ local function doTest()
     return ret
 end
 
-lib.Log(doTest())
+doTest()
+--lib.Log(doTest())

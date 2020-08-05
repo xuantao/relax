@@ -30,9 +30,17 @@ template <typename Ty, typename... Args>
 struct Identity {
     typedef Ty type;
 };
+
+LUA_EXPORT auto do_test(int a, Storage* l) -> int {
+    return 1;
+}
 } // namespace detail
 
 LUA_EXPORT auto do_work(int a, lua_State* l) -> int {
+    return 1;
+}
+
+LUA_EXPORT auto do_work_1(int a, detail::Storage* l) -> int {
     return 1;
 }
 
