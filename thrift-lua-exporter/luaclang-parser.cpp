@@ -328,9 +328,12 @@ static int l_parent(lua_State *L) {
 
 static int l_arguments(lua_State *L) {
     CXCursor cur = toCursor(L, 1);
-    unsigned int nArgs = clang_Cursor_getNumArguments(cur);
+    int nArgs = clang_Cursor_getNumArguments(cur);
+    if (nArgs == -1)
+        return 0;
+
     lua_createtable(L, nArgs, 0);
-    for (unsigned int i=0; i<nArgs; i++) {
+    for (int i=0; i<nArgs; i++) {
         CXCursor *arg = newCursor(L);
         *arg = clang_Cursor_getArgument(cur, i);
         lua_rawseti(L, -2, i+1);
@@ -338,7 +341,7 @@ static int l_arguments(lua_State *L) {
     return 1;
 }
 
-static int lua_specializedTemplate(lua_State* L) {
+static int l_specializedTemplate(lua_State* L) {
     CXCursor cur = toCursor(L, 1);
     CXCursor tmp = clang_getSpecializedCursorTemplate(cur);
     if (clang_Cursor_isNull(tmp))
@@ -495,7 +498,7 @@ static luaL_Reg cursor_functions[] = {
     {"displayName", l_displayName},
     {"parent", l_parent},
     {"arguments", l_arguments},
-    {"specializedTemplate", lua_specializedTemplate},
+    {"specializedTemplate", l_specializedTemplate},
     {"templateArguments", l_templateArguments},
     {"type", l_type},
     {"access", l_access},
@@ -589,6 +592,46 @@ static int l_elementType(lua_State* L) {
     return 1;
 }
 
+static int l_typeResultType(lua_State *L) {
+    CXType type = toType(L, 1);
+    CXType result = clang_getResultType(type);
+    if (result.kind == CXType_Invalid)
+        lua_pushnil(L);
+    else
+        *newType(L) = result;
+    return 1;
+}
+
+static int l_typeArguments(lua_State* L) {
+    CXType type = toType(L, 1);
+    int nArgs = clang_getNumArgTypes(type);
+    if (nArgs != -1) {
+        lua_createtable(L, nArgs, 0);
+        for (int i=0; i<nArgs; i++) {
+            *newType(L) = clang_getArgType(type, i);
+            lua_rawseti(L, -2, i+1);
+        }
+    } else {
+        lua_pushnil(L);
+    }
+    return 1;
+}
+
+static int l_typeTemplateArguments(lua_State* L) {
+    CXType type = toType(L, 1);
+    int nArgs = clang_Type_getNumTemplateArguments(type);
+    if (nArgs != -1) {
+        lua_createtable(L, nArgs, 0);
+        for (int i=0; i<nArgs; i++) {
+            *newType(L) = clang_Type_getTemplateArgumentAsType(type, i);
+            lua_rawseti(L, -2, i+1);
+        }
+    } else {
+        lua_pushnil(L);
+    }
+    return 1;
+}
+
 static int l_namedType(lua_State* L) {
     CXType type = toType(L, 1);
     CXType named = clang_Type_getNamedType(type);
@@ -627,6 +670,9 @@ static luaL_Reg type_functions[] = {
     {"canonical", l_canonical},
     {"pointee", l_pointee},
     {"element", l_elementType},
+    {"resultType", l_typeResultType},
+    {"arguments", l_typeArguments},
+    {"templateArguments", l_typeTemplateArguments},
     {"namedType", l_namedType},
     {"arraySize", l_arraySize},
     {"isPod", l_isPod},

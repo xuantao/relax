@@ -40,11 +40,14 @@ LUA_EXPORT auto do_work(int a, lua_State* l) -> int {
     return 1;
 }
 
-LUA_EXPORT auto do_work_1(int a, detail::Storage* l) -> int {
+LUA_EXPORT auto do_work_1(int a, detail::Storage* l = nullptr) -> int {
     return 1;
 }
 
 LUA_EXPORT int do_work2();
+
+typedef void (*fnCallback)(void* d);
+LUA_EXPORT int do_work3(fnCallback call) { return 1; }
 
 LUA_EXPORT void CallBack(const std::function<void(int)>& call) {
 }
