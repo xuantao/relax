@@ -113,9 +113,9 @@ local function onArg(cursor)
     local type = cursor:type()
     local children = cursor:children()
     if children then
-        print("11111", cursor:spelling())
+        print("11111", getKey(clang.CursorKind, cursor:kind()), cursor:spelling())
         for _, child in ipairs(children) do
-            print("222222", getKey(clang.CursorKind, child:kind()), child:spelling())
+            print("222222", getKey(clang.CursorKind, child:kind()), child:name(), child:spelling())
             if child:kind() == clang.CursorKind.UnexposedExpr or
                 child:kind() == clang.CursorKind.IntegerLiteral then
                 local cs = child:children()
@@ -206,7 +206,7 @@ function onNamespace(cursor)
         if kind == clang.CursorKind.Namespace then
             table.insert(eles, onNamespace(child))
         elseif kind == clang.CursorKind.FunctionDecl then
-            print("clang.CursorKind.FunctionDecl", cursor:spelling())
+            print("clang.CursorKind.FunctionDecl", child:spelling())
             table.insert(eles, onFunction(child))
         elseif kind == clang.CursorKind.StructDecl or kind == clang.CursorKind.ClassDecl then
             table.insert(eles, onClass(child))
@@ -229,8 +229,8 @@ end
 local test_args = {
     "-std=c++14",
     --"-ast-dump"
-    "-Xclang",
     "-DCLANG_PARSER",
+    "-Xclang",
     "-ast-dump",
     "-fsyntax-only",
     "-I",
@@ -267,6 +267,8 @@ local function doTest()
     local tu = index:parse(test_file, test_args)
     local cursor = tu:cursor()
     local ret = {}
+
+    lib.Log(tu:diagnostics())
 
     for _, child in ipairs(cursor:children()) do
         local f, lb, cb, le, ce = child:location()
