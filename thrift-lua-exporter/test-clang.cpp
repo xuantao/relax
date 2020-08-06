@@ -48,6 +48,7 @@ LUA_EXPORT int do_work2();
 
 typedef void (*fnCallback)(void* d);
 LUA_EXPORT int do_work3(fnCallback call) { return 1; }
+LUA_EXPORT int do_work4(int a = 101);
 
 LUA_EXPORT void CallBack(const std::function<void(int)>& call) {
 }

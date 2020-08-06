@@ -111,6 +111,23 @@ end
 
 local function onArg(cursor)
     local type = cursor:type()
+    local children = cursor:children()
+    if children then
+        print("11111", cursor:spelling())
+        for _, child in ipairs(children) do
+            print("222222", getKey(clang.CursorKind, child:kind()), child:spelling())
+            if child:kind() == clang.CursorKind.UnexposedExpr or
+                child:kind() == clang.CursorKind.IntegerLiteral then
+                local cs = child:children()
+                print("2222---", cs, #cs)
+                for _, c in ipairs(cs)do
+                    print("3333", getKey(clang.CursorKind, c:kind()), c:spelling(), c:name())
+                end
+            end
+
+        end
+    end
+
     return {"arg", cursor:name(), {type = parseType(type)}}
 end
 
