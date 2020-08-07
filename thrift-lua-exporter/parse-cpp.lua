@@ -112,6 +112,9 @@ end
 local function onArg(cursor)
     local type = cursor:type()
     local children = cursor:children()
+
+    print("onArg", getKey(clang.CursorKind, cursor:kind()), cursor:spelling(), type:spelling())
+
     if children then
         print("11111", getKey(clang.CursorKind, cursor:kind()), cursor:spelling())
         for _, child in ipairs(children) do
@@ -134,10 +137,26 @@ end
 local function onFunction(cursor)
     local ret_type = cursor:resultType()
     local args = {}
+
+    --print("onFunction 1", cursor:displayName())
+
+    local type = cursor:type()
+    if type then
+        local args = type:arguments()
+        for _, a in pairs(args) do
+            print("arg", getKey(clang.TypeKind, a:kind()), a:spelling())
+        end
+    end
+
+    for _, c in ipairs(cursor:children()) do
+        print("onFunction", getKey(clang.CursorKind, c:kind()), c:spelling(), c:displayName())
+    end
+
     for _, arg in ipairs(cursor:arguments()) do
         table.insert(args, onArg(arg))
     end
-    return {"function", cursor:name(), {ret = parseType(ret_type), args = args, tag = getTag(cursor)}}
+    --return {"function", cursor:name(), {ret = parseType(ret_type), args = args, tag = getTag(cursor)}}
+    return {}
 end
 
 local function onCunstructor(cursor)
@@ -206,7 +225,7 @@ function onNamespace(cursor)
         if kind == clang.CursorKind.Namespace then
             table.insert(eles, onNamespace(child))
         elseif kind == clang.CursorKind.FunctionDecl then
-            print("clang.CursorKind.FunctionDecl", child:spelling())
+            print("clang.CursorKind.FunctionDecl", child:spelling(), child:displayName())
             table.insert(eles, onFunction(child))
         elseif kind == clang.CursorKind.StructDecl or kind == clang.CursorKind.ClassDecl then
             table.insert(eles, onClass(child))
@@ -277,7 +296,7 @@ local function doTest()
             if kind == clang.CursorKind.Namespace then
                 table.insert(ret, onNamespace(child))
             elseif kind == clang.CursorKind.FunctionDecl then
-                print("clang.CursorKind.FunctionDecl", child:spelling())
+                print("clang.CursorKind.FunctionDecl", child:spelling(), child:displayName())
                 table.insert(ret, onFunction(child))
             elseif kind == clang.CursorKind.StructDecl or kind == clang.CursorKind.ClassDecl then
                 table.insert(ret, onClass(child))

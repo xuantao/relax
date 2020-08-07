@@ -44,14 +44,18 @@ LUA_EXPORT auto do_work_1(int a, detail::Storage* l = nullptr) -> int {
     return 1;
 }
 
-LUA_EXPORT int do_work2();
+struct vector {
+ int x = 0;
+ int y = 0;
+};
 
+LUA_EXPORT int do_work2();
 typedef void (*fnCallback)(void* d);
 LUA_EXPORT int do_work3(fnCallback call) { return 1; }
 LUA_EXPORT int do_work4(int a = 101);
-
-LUA_EXPORT void CallBack(const std::function<void(int)>& call) {
-}
+LUA_EXPORT int do_work5(const char* fmt, ...   ) { return 1; }
+LUA_EXPORT int do_work6(const vector& vec = vector());
+LUA_EXPORT void CallBack(const std::function<void(int)>& call) {}
 
 int main(int argc, char* argv[])
 {
