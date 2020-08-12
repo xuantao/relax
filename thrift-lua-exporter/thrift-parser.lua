@@ -22,7 +22,17 @@ local p_reference = p_identity * (p_empty * P'.' * p_empty * p_identity)^0      
 -- 提取器
 local c_annotation = (P'//' * P'/'^0 * C((1 - P'\n')^0) * (P'\n' + P(-1)) +
     P'/*' * (P'*' - P'*/')^0 * C((1 - P'*/')^0) * P'*/')^-1/1                   -- 提取注释
-local c_tag = (P'/*<@' * p_space * C(p_reference) * p_space * P'>*/')^-1/1      -- 提取标记
+local c_reference = Ct(C(p_identity) * (p_empty * P'.' * p_empty * C(p_identity))^0) /
+    function (ps) return table.concat(ps, '.') end
+local c_tag = (P'/*<@' * p_space * c_reference * p_space * P'>*/')^-1/1      -- 提取标记
+local c_type = P{
+    V'list' + V'map' + V'normal',
+    normal = c_reference / function(ref) return {"normal", ref} end,
+    list = P'list' * p_space * P'<' * p_space * V(1) * p_space * P'>' /
+        function(ref) return {"list", ref} end,
+    map = P'map' * p_space * P'<' * p_space * V(1) * p_space * P',' * p_space * V(1) * p_space * P'>' /
+        function(key, val) return {"map", key, val} end,
+}
 
 local function concatPath(p, f)
     if p == "" then
@@ -51,21 +61,21 @@ end
 local path = {}
 local parseFile
 local ts = P{
-    (V'include' + V'typedef' + V'const' + V'enum' + V'namespace') * Cp() + (p_comment + p_multi_line_comment + 1) * V(1),
+    (V'include' + V'typedef' + V'const' + V'enum' + V'namespace' + V'struct') * Cp() + (p_comment + p_multi_line_comment + 1) * V(1),
 
-    include = P'include' * p_empty * (P"'" * C(p_reference) * P"'" +  P'"' * C(p_reference) * P'"') /
+    include = P'include' * p_empty * (P"'" * c_reference * P"'" +  P'"' * c_reference * P'"') /
         function (f) return {"include", getFileName(f), {file = f, vars = parseFile(f)}} end,
 
     namespace = P'namespace' * p_empty * C(p_identity) * p_empty * C(p_identity) / function (lan, id)
             return {"namespace", id, lan}
         end,
 
-    typedef = c_annotation * p_space * P'typedef' * p_empty * C(p_reference) * p_empty * C(p_identity) *
+    typedef = c_annotation * p_space * P'typedef' * p_empty * c_reference * p_empty * C(p_identity) *
         S',;'^-1 * S' \t'^0 * c_annotation / function (pre_desc, type, id, suf_desc)
             return {"typedef", id, {type = type, desc = prefer(suf_desc, pre_desc)}}
         end,
 
-    const = c_annotation * p_space * P'const' * p_empty * C(p_reference) * p_empty * C(p_identity) * p_space * P'=' *
+    const = c_annotation * p_space * P'const' * p_empty * c_reference * p_empty * C(p_identity) * p_space * P'=' *
         p_space* C(p_decimal + p_hexadecimal + p_reference) * S',;'^-1 * S' \t'^0 * c_annotation / 
             function (pre_desc, type, id, value, suf_desc) return {"const", id, {type = type, value = value, desc = prefer(suf_desc, pre_desc)}} end,
 
@@ -78,7 +88,17 @@ local ts = P{
         var = p_empty * C(p_identity) * (V'value'^-1/1) * p_empty * S',;'^0 * S' \t'^0 * c_annotation /
             function(id, v, desc) return {id = id, value = v, desc = desc} end,
         value = p_empty * P'=' * p_empty * C(p_decimal + p_hexadecimal),
-    }
+    },
+
+    struct = P{
+        V'struct',
+        struct = P'struct' * p_space * c_tag * p_empty * C(p_identity) * p_empty * V'body' /
+            function (tag, id, mems) return {"struct", id, {tag = tag, member = mems}} end,
+        body = P'{' * p_empty * Ct(V'member'^0) * p_empty * P'}',
+        member = p_decimal * p_empty * P':' * p_empty * V'opt' * p_empty * c_type * p_empty * C(p_identity) * p_empty * S','^0 * p_empty /
+            function(opt, type, id) return {opt = opt, type = type, id = id} end,
+        opt = C'required' + C'optional',
+    },
 }
 
 -- 解析文本

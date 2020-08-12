@@ -140,6 +140,12 @@ function lib.IsUtf8(s)
     return 0
 end
 
+function lib.GetFileName(f)
+    local p_slash = f:find("[/\\][^/\\]*$") or 0
+    local p_dot = f:find("%.") or #f + 1
+    return f:sub(p_slash + 1, p_dot - 1)
+end
+
 function lib.LoadFile(fileName)
     local f = io.open(fileName, 'r')
     if not f then

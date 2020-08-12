@@ -14,6 +14,14 @@ local function concatNs(ns, name)
     return string.format("%s.%s", ns, name)
 end
 
+local function getType(type, id)
+    local path = lib.Split(id, "%%.")
+    for _, p in ipairs(path) do
+        type = type[p]
+    end
+    return type
+end
+
 local function getRealType(env, name)
     local r = env.type[name]
     if not r then
@@ -23,21 +31,37 @@ local function getRealType(env, name)
 end
 
 local function convValue(type, val)
-    if type == "byte" or
-        type == "i16" or
-        type == "i32" or
-        type == "i64" or
-        type == "double" then
+    assert(type.tag == "builtin")
+    if type.name == "byte" or
+        type.name == "i16" or
+        type.name == "i32" or
+        type.name == "i64" or
+        type.name == "double" then
         return tonumber(val)
-    elseif type == "string" then
+    elseif type.name == "string" then
         return val
     end
     return val
 end
 
+local function newEnv(g, name)
+    local scope = {}
+    g.type[name] = scope
+    return {
+        name = name,
+        namespace = "",
+        type = setmetatable({}, {
+        __index = g.type,
+        __newindex = function(t, k, v)
+            rawset(t, k, v)
+            scope[k] = v
+        end,})
+    }
+end
+
 local function onInclude(g, item)
     local prev = g.env
-    g.env = {name = item[2], namespace = "", type = prev.type}
+    g.env = newEnv(g, item[2])
     processData(g, item[3].vars)
     g.env = prev
 end
@@ -49,14 +73,15 @@ local function onNamespace(g, item)
 end
 
 local function onTypedef(g, item)
-    g.env.type[item[2]] = item[3].type
+    g.env.type[item[2]] = getType(g.env.type, item[3].type)
 end
 
 local function onConst(g, item)
     local c = item[3]
-    local t = getRealType(g.env, c.type)
+    local t = getType(g.env.type, c.type)
     local d = {
         name = item[2],
+        namespace = g.env.namespace,
         realName = concatNs(g.env.namespace, item[2]),
         value = convValue(t, c.value),
         type = t,
@@ -74,7 +99,9 @@ local function onEnum(g, item)
     local lastVal = 0
     local e = item[3]
     local d = {
+        tag = "enum",
         name = item[2],
+        namespace = g.env.namespace,
         realName = concatNs(g.env.namespace, item[2]),
         values = {},
         desc = e.d,
@@ -91,7 +118,52 @@ local function onEnum(g, item)
         table.insert(d.values, {name=v.id, value=lastVal, desc = v.desc})
     end
 
+    g.env.type[d.name] = d
     table.insert(g.exp.enum, d)
+end
+
+local function normalizeId(id)
+    return string.format("%s%s", string.upper(string.sub(id, 1, 1)), string.sub(id, 2))
+end
+
+local normaliszeType
+function normaliszeType(env, type)
+    if type[1] == "normal" then
+        --print(env.type, type[2], type[1])
+        type[2] = getType(env.type, type[2])
+--[[        local t = getType(env.type, type[2])
+        if t.tag == "builtin" then
+            type[2] = t.name
+        else
+            type[2] = concatNs(t.namespace, t.namespace)
+        end
+]]
+    elseif type[1] == "list" then
+        normaliszeType(env, type[2])
+    elseif type[1] == "map" then
+        normaliszeType(env, type[2])
+        normaliszeType(env, type[3])
+    end
+end
+
+local function onStruct(g, item)
+    local v = item[3]
+    local d = {
+        tag = "struct",
+        name = item[2],
+        namespace = g.env.namespace,
+        realName = concatNs(g.env.namespace, item[2]),
+        member = v.member,
+        toLua = (v.tag == "ToLua"),
+    }
+
+    for _, m in ipairs(v.member) do
+        m.id = normalizeId(m.id)
+        normaliszeType(g.env, m.type)
+    end
+
+    g.env.type[d.name] = d
+    table.insert(g.exp.struct, d)
 end
 
 local procs = {
@@ -100,6 +172,7 @@ local procs = {
     typedef = onTypedef,
     const = onConst,
     enum = onEnum,
+    struct = onStruct,
 }
 
 function processData(g, data)
@@ -409,6 +482,66 @@ local function exportEnumFile(enumFile, thrift, csharp)
     f:close()
 end
 
+local scanDependence, scanTypes
+function scanTypes(g, c, t)
+    print("0000", t[1], t[2].namespace, t[2].name, t[3])
+    if t[1] == "normal" then
+        local type = t[2]
+        print("11111", type.namespace, type.name)
+        local real = concatNs(type.namespace, type.name)
+        if type.tag == "struct" and not c.ref[real] then
+            c.ref[real] = true
+            table.insert(c.toLua, type)
+            scanDependence(g, c, type)
+        end
+    elseif t[1] == "list" then
+        local ref = t[2]
+        local real = concatNs(ref[2].namespace, ref[2].name)
+        c.list[real] = true
+        scanTypes(g, c, t[2])
+    elseif t[1] == "map" then
+        local ref = t[3]
+        local real = concatNs(ref[2].namespace, ref[2].name)
+        c.map[real] = true
+        scanTypes(g, c, t[2])
+        scanTypes(g, c, t[3])
+    end
+end
+
+function scanDependence(g, c, s)
+    for _, m in ipairs(s.member) do
+        print("1111", s.name, m.id)
+        scanTypes(g, c, m.type)
+    end
+end
+
+local function exportToLuaStruct(g)
+    local cache = {toLua = {}, ref = {}, sort = {}, list = {}, map = {}}
+    for i, s in ipairs(g.exp.struct) do
+        cache.sort[concatNs(s.namespace, s.name)] = i
+        if s.toLua then
+            table.insert(cache.toLua, s)
+            scanDependence(g, cache, s)
+        end
+    end
+
+    table.sort(cache.toLua, function (l, r)
+        return cache.sort[concatNs(l.namespace, l.name)] < cache.sort[concatNs(r.namespace, r.name)]
+    end)
+
+    for _, v in ipairs(cache.toLua) do
+        print(v.name, v.namespace)
+    end
+end
+
+local function builtin(...)
+    local ret = {}
+    for _, t in ipairs({...}) do
+        ret[t] = {tag = "builtin", name = t}
+    end
+    return ret
+end
+
 -- 解析thrift并导出成json
 -- srcThrift: 源协议文件
 -- destJson:  目标Json文件
@@ -420,17 +553,24 @@ local function parseThrift(srcThrift, destJson)
     end
 
     local g = {
-        env = {name = "tcligs", namespace = "", type = {}},
-        exp = {const = {}, enum = {}, tip = {}}
+        type = setmetatable({}, {__index = builtin("bool", "byte", "i16", "i32", "i64", "double", "string", "binary")}),
+        exp = {const = {}, enum = {}, tip = {}, struct = {}}
     }
+    g.env = newEnv(g, lib.GetFileName(srcThrift))
     processData(g, ret)
 
+    exportToLuaStruct(g)
+
+    --[[
     local etc ={}
-    local str = json:encode(g.exp, etc, {pretty = true, indent = "  ", align_keys = false})
+    local str = json:encode({const=g.exp.const, enum=g.exp.enum, tip=g.exp.tip},
+        etc, {pretty = true, indent = "  ", align_keys = false})
     local f = io.open(destJson, 'w')
     f:write(string.char(0xef, 0xbb, 0xbf))
     f:write(str)
     f:close()
+    ]]
+    --lib.Log(g.exp.struct)
 end
 
 -- 将中间文件导出到目标文件
