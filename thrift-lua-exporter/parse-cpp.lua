@@ -186,6 +186,7 @@ end
 
 local onClass
 function onClass(cursor)
+    print("onClass", cursor:spelling())
     local baseClass = {}
     local inner = {}
     local member = {}
@@ -219,6 +220,7 @@ end
 
 local onNamespace
 function onNamespace(cursor)
+    print("onNamespace", cursor:spelling())
     local eles = {}
     for _, child in ipairs(cursor:children()) do
         local kind = child:kind()

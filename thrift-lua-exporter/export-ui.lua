@@ -15,7 +15,7 @@ local function concatNs(ns, name)
 end
 
 local function getType(type, id)
-    local path = lib.Split(id, "%%.")
+    local path = lib.Split(id, ".")
     for _, p in ipairs(path) do
         type = type[p]
     end
@@ -154,7 +154,7 @@ local function onStruct(g, item)
         namespace = g.env.namespace,
         realName = concatNs(g.env.namespace, item[2]),
         member = v.member,
-        toLua = (v.tag == "ToLua"),
+        toLua = (string.lower(v.tag) == "tolua"),
     }
 
     for _, m in ipairs(v.member) do
@@ -395,7 +395,7 @@ local function exportEnumFile(enumFile, thrift, csharp)
     local nsList = {default}
     for _, info in ipairs(thrift.enum) do
         if not info.errorCode then
-            local p = lib.Split(info.realName, '%.')
+            local p = lib.Split(info.realName, '.')
             local ns
             if #p > 1 then
                 ns = nsMap[p[1]]
@@ -413,7 +413,7 @@ local function exportEnumFile(enumFile, thrift, csharp)
     end
 
     for _, info in ipairs(thrift.const) do
-        local p = lib.Split(info.realName, '%.')
+        local p = lib.Split(info.realName, '.')
         local ns
         if #p > 1 then
             ns = nsMap[p[1]]
@@ -482,12 +482,20 @@ local function exportEnumFile(enumFile, thrift, csharp)
     f:close()
 end
 
-local scanDependence, scanTypes
-function scanTypes(g, c, t)
-    print("0000", t[1], t[2].namespace, t[2].name, t[3])
+local getInnerType, scanDependence, scanMembeType
+local function getInnerType(type)
+    if type[1] == "normal" then
+        return type[2]
+    elseif type[1] == "list" then
+        return getInnerType(type[2])
+    elseif type[1] == "map" then
+        return getInnerType(type[3])
+    end
+end
+
+function scanMembeType(g, c, t)
     if t[1] == "normal" then
         local type = t[2]
-        print("11111", type.namespace, type.name)
         local real = concatNs(type.namespace, type.name)
         if type.tag == "struct" and not c.ref[real] then
             c.ref[real] = true
@@ -495,24 +503,184 @@ function scanTypes(g, c, t)
             scanDependence(g, c, type)
         end
     elseif t[1] == "list" then
-        local ref = t[2]
-        local real = concatNs(ref[2].namespace, ref[2].name)
-        c.list[real] = true
-        scanTypes(g, c, t[2])
+        scanMembeType(g, c, t[2])
+        local ref = getInnerType(t[2])
+        local real = concatNs(ref.namespace, ref.name)
+        if c.list[real] then
+            table.insert(c.list[real], t)
+        else
+            c.list[real] = {t}
+        end
     elseif t[1] == "map" then
-        local ref = t[3]
-        local real = concatNs(ref[2].namespace, ref[2].name)
-        c.map[real] = true
-        scanTypes(g, c, t[2])
-        scanTypes(g, c, t[3])
+        scanMembeType(g, c, t[2])
+        scanMembeType(g, c, t[3])
+        local ref = getInnerType(t[3])
+        local real = concatNs(ref.namespace, ref.name)
+        if c.map[real] then
+            table.insert(c.map[real], t)
+        else
+            c.map[real] = {t}
+        end
     end
 end
 
 function scanDependence(g, c, s)
     for _, m in ipairs(s.member) do
-        print("1111", s.name, m.id)
-        scanTypes(g, c, m.type)
+        scanMembeType(g, c, m.type)
     end
+end
+
+local builtin2Csharp = {
+    bool = "bool",
+    byte = "sbyte",
+    i16 = "short",
+    i32 = "int",
+    i64 = "long",
+    double = "double",
+    string = "string",
+}
+
+local genTypeName
+function genTypeName(type)
+    --lib.Log(type)
+    if type[1] == "normal" then
+        local ty = type[2]
+        if ty.tag == "builtin" then
+            return builtin2Csharp[ty.name]
+        else
+            return ty.realName
+        end
+    elseif type[1] == "list" then
+        return string.format("List<%s>", genTypeName(type[2]))
+    elseif type[1] == "map" then
+        return string.format("Dictionary<%s, %s>", genTypeName(type[2]), genTypeName(type[3]))
+    end
+end
+
+local function exportStructList(f, list)
+    if not list then
+        return
+    end
+
+    for _, ty in ipairs(list) do
+        local type = ty[2]
+        local realName = genTypeName(ty)
+        f:write(string.format("Slua.LuaTable ToLua(%s list) {\n", realName))
+        f:write("  var ret = new Slua.LuaTable(Lua.Instance.luaState);\n")
+        f:write("  int idx = 0;\n")
+        f:write("  foreach (var val in list)\n")
+        if type.tag == "builtin" or type.tag == "enum" then
+            f:write("    ret[++idx] = val;\n")
+        else
+            f:write("    ret[++idx] = ToLua(val);\n")
+        end
+        f:write("  return ret;\n")
+        f:write("}\n\n")
+
+        f:write(string.format("void FromLua(out %s ret, Slua.LuaTable tab, bool opt == false) {\n", realName))
+        f:write("  if (tab == null || !tab.isTable) {\n")
+        f:write("    if (opt) ret = nil;\n")
+        f:write(string.format("    else ret = new %s();\n", realName))
+        f:write("    return;\n")
+        f:write("  }\n\n")
+        f:write(string.format("  ret = new %s();\n", realName))
+        --TODO:
+        f:write("}\n\n")
+    end
+end
+
+local function exportStructMap(f, map)
+    if not map then
+        return
+    end
+
+    for _, ty in ipairs(map) do
+        local realName = genTypeName(ty)
+        local val = ty[3]
+        f:write(string.format("Slua.LuaTable ToLua(%s dic) {\n", realName))
+        f:write("var ret = new Slua.LuaTable(Lua.Instance.luaState);\n")
+        f:write("  foreach (var pair in dic)\n")
+        if val.tag == "builtin" or val.tag == "enum" then
+            f:write("    ret[pair.key] = pair.value;\n")
+        else
+            f:write("    ret[pair.key] = ToLua(val);\n")
+        end
+        f:write("  return ret;\n")
+        f:write("}\n\n")
+
+        f:write(string.format("void FromLua(out %s ret, Slua.LuaTable tab, bool opt == false) {\n", realName))
+        f:write("  if (tab == null || !tab.isTable) {\n")
+        f:write("    if (opt) ret = nil;\n")
+        f:write(string.format("    else ret = new %s();\n", realName))
+        f:write("    return;\n")
+        f:write("  }\n\n")
+        f:write(string.format("  ret = new %s();\n", realName))
+        --TODO:
+        f:write("}\n\n")
+    end
+end
+
+local function exportStruct(f, c, s)
+    local hasOpt
+    for _, m in ipairs(s.member) do
+        if m.opt == "optional" then
+            hasOpt = true
+            break
+        end
+    end
+
+    f:write(string.format("Slua.LuaTable ToLua(%s obj) {\n", s.realName))
+    f:write("  var ret = new Slua.LuaTable(Lua.Instance.luaState);\n")
+    for _, m in ipairs(s.member) do
+        local ty = m.type[2]
+        if ty.tag == "builtin" or ty.tag == "enum" then
+            f:write(string.format("  ret[\"%s\"] = obj.%s;\n", m.id, m.id))
+        else
+            f:write(string.format("  ret[\"%s\"] = ToLua(obj.%s);\n", m.id, m.id))
+        end
+    end
+    f:write("}\n\n")
+
+    f:write(string.format("void FromLua(out %s ret, Slua.LuaTable tab, bool opt = false) {\n", s.realName))
+    f:write("  if (tab == null || !tab.isTable) {\n")
+    f:write("    if (opt) ret = nil;\n")
+    f:write(string.format("    else ret = new %s();\n", s.realName))
+    f:write("    return;\n")
+    f:write("  }\n\n")
+    if hasOpt then
+        f:write("  Slua.LuaVar temp;\n")
+    end
+    f:write(string.format("  ret = new %s();\n", s.realName))
+    for _, m in ipairs(s.member) do
+        local ty = m.type[2]
+        if ty.tag == "builtin" then
+            local t = builtin2Csharp[ty.name]
+            assert(t)
+            if m.opt == "optional" then
+                f:write(string.format("  temp = tab[\"%s\"];", m.id))
+                f:write(string.format(" if (temp != null) ret.%s = (%s)temp;\n", m.id, t))
+            else
+                f:write(string.format("  ret.%s = (%s)tab[\"%s\"];\n", m.id, t, m.id))
+            end
+        elseif ty.tag == "enum" then
+            if m.opt == "optional" then
+                f:write(string.format("  temp = tab[\"%s\"];", m.id))
+                f:write(string.format(" if (temp != null) ret.%s = (%s)temp;\n", m.id, ty.realName))
+            else
+                f:write(string.format("  ret.%s = (%s)tab[\"%s\"];\n", m.id, ty.realName, m.id))
+            end
+        else
+            f:write(string.format("  FromLua(out ret.%s, tab[\"%s\"]", m.id, m.id))
+            if m.opt == "optional" then
+                f:write(", true")
+            end
+            f:write(");\n")
+        end
+    end
+    f:write("}\n\n")
+
+    exportStructList(f, c.list[s.realName])
+    exportStructMap(f, c.map[s.realName])
 end
 
 local function exportToLuaStruct(g)
@@ -529,9 +697,17 @@ local function exportToLuaStruct(g)
         return cache.sort[concatNs(l.namespace, l.name)] < cache.sort[concatNs(r.namespace, r.name)]
     end)
 
-    for _, v in ipairs(cache.toLua) do
-        print(v.name, v.namespace)
+    local f = io.open("thrift.cs", 'w')
+    f:write(string.char(0xef, 0xbb, 0xbf))
+    f:write("/* generate by export tool\n * do not manual modify this file\n*/\n\n")
+
+    for _, s in ipairs(cache.toLua) do
+        print(s.namespace, s.name)
+        exportStruct(f, cache, s)
     end
+
+    f:write("\n")
+    f:close()
 end
 
 local function builtin(...)
@@ -582,6 +758,7 @@ end
 --    tipCodeFile = "UITipsNotifyCodeTab.xls",
 -- }
 local function export(cfg)
+    do return end
     local thrift = json:decode(lib.LoadFile(cfg.thriftFile) or "{}")
     local csharp = json:decode(lib.LoadFile(cfg.csharpFile) or "{}")
 

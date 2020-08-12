@@ -57,6 +57,11 @@ LUA_EXPORT int do_work5(const char* fmt, ...   ) { return 1; }
 LUA_EXPORT int do_work6(const vector& vec = vector());
 LUA_EXPORT void CallBack(const std::function<void(int)>& call) {}
 
+namespace detail {
+    struct After : public Object {
+    };
+}
+
 int main(int argc, char* argv[])
 {
     printf("hello world\n");

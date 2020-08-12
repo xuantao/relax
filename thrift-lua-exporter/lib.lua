@@ -73,14 +73,19 @@ function lib.Trim(str, pat)
     return string.sub(str, b + l, e - 1)
 end
 
-function lib.Split(str, sep)
+function lib.Split(str, delim)
     local result = {}
-    if str == nil or str == '' or sep == nil then
-        return result
+    local magic = "().%+-*?[]^$"
+
+    if delim == nil then
+        delim = "%s"
+    elseif string.find(delim, magic, 1, true) then
+        delim = "%"..delim  -- escape magic
     end
 
-    for match in (str..sep):gmatch("(.-)"..sep) do
-        table.insert(result, match)
+    local pattern = "[^"..delim.."]+"
+    for w in string.gmatch(str, pattern) do
+        table.insert(result, w)
     end
     return result
 end
