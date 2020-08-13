@@ -11,7 +11,7 @@ local cfg = {
 }
 
 _DEBUG_XLS_ = true  -- debug模式
-exp.ParseThrift("test/tcligs.thrift", "tcligs.json")
+exp.ParseThrift("test/tcligs.thrift", "tcligs.json", "LuaConv.cs")
 exp.Export(cfg)
 
 local actions = {}
@@ -20,7 +20,7 @@ function actions.UpdateCsharp()
 end
 
 function actions.UpdateThrift()
-    exp.ParseThrift("test/tcligs.thrift", "tcligs.json")
+    exp.ParseThrift("test/tcligs.thrift", "tcligs.json", "LuaConv.cs")
     exp.Export(cfg)
 end
 

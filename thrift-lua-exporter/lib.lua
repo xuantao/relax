@@ -1,6 +1,14 @@
 ﻿local gbk = require "gbk"
 local lib = {}
 
+function lib.Find(tab, value)
+    for k, v in pairs(tab) do
+        if v == value then
+            return k
+        end
+    end
+end
+
 local function visitTable(val, p)
     local np = function (s, d)
         p(string.format("%s%s", string.rep(' ', d*2), s))
@@ -73,21 +81,11 @@ function lib.Trim(str, pat)
     return string.sub(str, b + l, e - 1)
 end
 
-function lib.Split(str, delim)
-    local result = {}
-    local magic = "().%+-*?[]^$"
-
-    if delim == nil then
-        delim = "%s"
-    elseif string.find(delim, magic, 1, true) then
-        delim = "%"..delim  -- escape magic
-    end
-
-    local pattern = "[^"..delim.."]+"
-    for w in string.gmatch(str, pattern) do
-        table.insert(result, w)
-    end
-    return result
+function lib.Split(str, sep)
+    local tbl = {}
+    local pat = string.format([[[^%s]*]], sep)
+    str:gsub(pat, function(x) tbl[#tbl+1]=x end)
+    return tbl
 end
 
 function lib.IsUtf8(s)
