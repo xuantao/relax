@@ -114,6 +114,7 @@ static int l_parseTU(lua_State *L) {
     CXIndex idx = toIndex(L, 1);
     int tabIndex;
     const char *sourceFile;
+    unsigned options = CXTranslationUnit_SkipFunctionBodies;
 
     if (lua_type(L, 2) == LUA_TTABLE) {
         sourceFile = NULL;
@@ -123,6 +124,9 @@ static int l_parseTU(lua_State *L) {
         luaL_checktype(L, 3, LUA_TTABLE);
         tabIndex = 3;
     }
+
+    if (lua_type(L, tabIndex + 1) == LUA_TNUMBER)
+        options = lua_tointeger(L, tabIndex + 1);
 
     int nArgs = lua_rawlen(L, tabIndex);
     lua_checkstack(L, nArgs);

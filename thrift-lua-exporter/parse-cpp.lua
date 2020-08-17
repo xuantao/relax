@@ -247,6 +247,38 @@ function onNamespace(cursor)
     return {"namespace", cursor:name(), elements = eles}
 end
 
+local function onVisitFunction(g, cursor)
+end
+
+local onVisit
+function onVisit(g, cursor)
+    for _, child in ipairs(cursor:children()) do
+        --local f, lb, cb, le, ce = child:location()
+        local kind = child:kind()
+        if kind == clang.CursorKind.Namespace then
+            --table.insert(ret, onNamespace(child))
+            onVisit(g, child)
+        elseif kind == clang.CursorKind.FunctionDecl then
+            print("clang.CursorKind.FunctionDecl", child:spelling(), child:displayName())
+            table.insert(ret, onFunction(child))
+        elseif kind == clang.CursorKind.StructDecl or kind == clang.CursorKind.ClassDecl then
+            table.insert(ret, onClass(child))
+        elseif kind == clang.CursorKind.EnumDecl then
+            table.insert(ret, onEnum(child))
+        elseif kind == clang.CursorKind.VarDecl then
+            table.insert(ret, onVar(child))
+        elseif kind == clang.CursorKind.FunctionTemplate then
+            --TODO:
+        elseif kind == clang.CursorKind.ClassTemplate then
+            --TODO:
+        end
+    end
+end
+
+local function parse(cursor)
+
+end
+
 local test_args = {
     "-std=c++14",
     --"-ast-dump"
@@ -285,7 +317,9 @@ local test_args = {
 
 local function doTest()
     local index = clang.createIndex(true, true)
-    local tu = index:parse(test_file, test_args)
+    local tu = index:parse(test_file, test_args,
+        --2 +
+        clang.TranslationUnit_Flags.SingleFileParse + clang.TranslationUnit_Flags.SkipFunctionBodies)
     local cursor = tu:cursor()
     local ret = {}
 
@@ -293,6 +327,7 @@ local function doTest()
 
     for _, child in ipairs(cursor:children()) do
         local f, lb, cb, le, ce = child:location()
+        print("file", f)
         if f == test_file then
             local kind = child:kind()
             if kind == clang.CursorKind.Namespace then
