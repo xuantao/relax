@@ -131,7 +131,13 @@ end
 local normaliszeType
 function normaliszeType(env, type)
     if type[1] == "normal" then
-        type[2] = getType(env.type, type[2])
+        local t = getType(env.type, type[2])
+        if not t then
+            type[1] = "ref"
+            type[2] = string.format("%s.%s", env.name, type[2])
+        else
+            type[2] = t
+        end
     elseif type[1] == "list" then
         normaliszeType(env, type[2])
     elseif type[1] == "map" then
@@ -148,6 +154,7 @@ local function onStruct(g, item)
         realName = concatNs(g.env.namespace, item[2]),
         member = v.member,
         luaConv = (string.lower(v.tag) == "luaconv"),
+        toLua = (string.lower(v.tag) == "tolua"),
     }
 
     for _, m in ipairs(v.member) do
@@ -173,6 +180,31 @@ function processData(g, data)
         local p = procs[item[1]]
         if p then
             p(g, item)
+        end
+    end
+end
+-- 后处理类型引用
+local function processAfter(g)
+    local visit
+    visit = function (type)
+        if type[1] == "ref" then
+            local t = getType(g.type, type[2])
+            assert(t)
+            type[1] = "normal"
+            type[2] = t
+        elseif type[1] == "list" then
+            visit(type[2])
+        elseif type[1] == "map" then
+            visit(type[2])
+            visit(type[3])
+        else
+            assert(type[1] == "normal" or type[1] == "builtin")
+        end
+    end
+
+    for _, s in ipairs(g.exp.struct) do
+        for _, m in ipairs(s.member) do
+            visit(m.type)
         end
     end
 end
@@ -341,7 +373,7 @@ local function exportErrorCode(errorCodeFile, thrift, csharp)
     saveXls(errorCodeFile, ret)
 end
 
-local function writeLuaValue(f, val, tab, comma)
+local function writeLuaValue(f, val, prev, comma)
     local ml
     comma = comma or ''
 
@@ -349,14 +381,14 @@ local function writeLuaValue(f, val, tab, comma)
         local b, e = string.find(val.desc, '\n')
         ml = e and e > 0
         if ml then
-            f:write(string.format("%s--[[%s]]\n", tab, val.desc))
+            f:write(string.format("--[[%s]]\n", val.desc))
         end
     end
 
     if val.type == "string" then
-        f:write(string.format("%s%s = \"%s\"", tab, val.name, val.value))
+        f:write(string.format("%s%s = \"%s\"", prev, val.name, val.value))
     else
-        f:write(string.format("%s%s = %s", tab, val.name, val.value))
+        f:write(string.format("%s%s = %s", prev, val.name, val.value))
     end
     f:write(comma)
 
@@ -367,24 +399,11 @@ local function writeLuaValue(f, val, tab, comma)
 end
 
 local function exportEnumFile(enumFile, thrift, csharp)
-    local f = io.open(enumFile, 'w')
+    local f = io.open(enumFile, 'wb')
     f:write(string.char(0xef, 0xbb, 0xbf))
-    f:write("--- EnumDef C#枚举定义\n")
+    f:write("--- EnumDef C#、Thrift(protocol_gs, protocol_shared)枚举定义\n")
     f:write("-- @module EnumDef\n\n")
-    -- csharp相关定义
-    for _, e in ipairs(csharp) do
-        if not e.errorCode then
-            f:write(string.format("--- %s\n", e.desc))
-            f:write(string.format("-- @table %s\n", e.name))
-            f:write(string.format("%s = {\n", e.name))
-            for _, l in ipairs(e.values) do
-                f:write(string.format("    %s = %s,\n", l.name, l.value))
-            end
-            f:write("}\n")
-        end
-    end
 
-    -- thrift相关定义
     local default = {namespace = "", const = {}, enum = {}}
     local nsMap = {[""] = default}
     local nsList = {default}
@@ -424,6 +443,30 @@ local function exportEnumFile(enumFile, thrift, csharp)
         table.insert(ns.const, info)
     end
 
+    -- 前置声明名字空间
+    for i, ns in ipairs(nsList) do
+        if ns.namespace ~= "" then
+            f:write(string.format("%s = %s or {}\n", ns.namespace, ns.namespace))
+        end
+    end
+    if #nsList > 0 then
+        f:write("\n")
+    end
+
+    -- csharp相关定义
+    for _, e in ipairs(csharp) do
+        if not e.errorCode then
+            f:write(string.format("--- %s\n", e.desc))
+            f:write(string.format("-- @table %s\n", e.name))
+            f:write(string.format("%s = {\n", e.name))
+            for _, l in ipairs(e.values) do
+                f:write(string.format("    %s = %s,\n", l.name, l.value))
+            end
+            f:write("}\n")
+        end
+    end
+
+    -- thrift相关定义
     if #nsList > 0 then
         if #csharp > 0 then
             f:write("\n\n")
@@ -431,26 +474,21 @@ local function exportEnumFile(enumFile, thrift, csharp)
         f:write("--- thrift定义的常量、枚举\n")
     end
     for i, ns in ipairs(nsList) do
-        local tab = ""
-        local tab2 = "    "
-        local nsComma = ""
+        local prevConst = ""
         local isNs = ns.namespace ~= ""
 
-        if i > 2 then   -- 第一个为空白明明空间
+        if i > 2 then   -- 第一个为空白名字空间
             f:write('\n')
         end
 
         if isNs then
-            tab = "    "
-            tab2 = "        "
-            nsComma = ','
+            prevConst = string.format("%s.", ns.namespace)
             f:write(string.format("---@namespace %s\n", ns.namespace))
-            f:write(string.format("%s = {\n", ns.namespace))
         end
 
         -- const
         for _, val in ipairs(ns.const) do
-            writeLuaValue(f, val, tab, nsComma)
+            writeLuaValue(f, val, prevConst, "")
         end
 
         if #ns.const > 0  and #ns.enum > 0then
@@ -460,16 +498,16 @@ local function exportEnumFile(enumFile, thrift, csharp)
         -- enum
         for _, info in ipairs(ns.enum) do
             if info.desc and info.desc ~= "" then
-                f:write(string.format("%s--[[%s]]\n", tab, info.desc))
+                f:write(string.format("--[[%s]]\n", info.desc))
             end
-            f:write(string.format("%s%s = {\n", tab, info.name))
+            if isNs then
+                f:write(string.format("%s.%s = {\n", ns.namespace, info.name))
+            else
+                f:write(string.format("    %s = {\n", info.name))
+            end
             for _, val in ipairs(info.values) do
-                writeLuaValue(f, val, tab2, ',')
+                writeLuaValue(f, val, "    ", ',')
             end
-            f:write(string.format("%s}%s\n", tab, nsComma))
-        end
-
-        if ns.namespace ~= "" then
             f:write("}\n")
         end
     end
@@ -485,6 +523,8 @@ local function getInnerType(type)
         return getInnerType(type[2])
     elseif type[1] == "map" then
         return getInnerType(type[3])
+    else
+        assert(false)
     end
 end
 
@@ -501,7 +541,9 @@ function scanMembeType(g, c, t)
         scanMembeType(g, c, t[2])
         local ref = getInnerType(t[2])
         if ref.tag == "builtin" or ref.tag == "enum" then
-            table.insert(c.builtinList, t)
+            if ref.tag == "enum" then
+                table.insert(c.builtinList, t)
+            end
         else
             local list = c.list[ref.realName]
             if not list then
@@ -515,7 +557,9 @@ function scanMembeType(g, c, t)
         scanMembeType(g, c, t[3])
         local ref = getInnerType(t[3])
         if ref.tag == "builtin" or ref.tag == "enum" then
-            table.insert(c.builtinMap, t)
+            if ref.tag == "enum" then
+                table.insert(c.builtinMap, t)
+            end
         else
             local map = c.map[ref.realName]
             if not map then
@@ -528,6 +572,7 @@ function scanMembeType(g, c, t)
 end
 
 function scanDependence(g, c, s)
+    c.ref[s.realName] = true
     for _, m in ipairs(s.member) do
         scanMembeType(g, c, m.type)
     end
@@ -589,7 +634,8 @@ local function exportStructList(f, list)
             unique[realName] = true
 
             local type = ty[2][2]
-            f:write(string.format("    public static SLua.LuaTable ToLua(%s list) {\n", realName))
+            f:write(string.format("    public static SLua.LuaTable ToLua(%s list)\n", realName))
+            f:write("    {\n")
             f:write("        if (list == null)\n")
             f:write("            return null;\n\n")
             f:write("        int idx = 0;\n")
@@ -603,7 +649,8 @@ local function exportStructList(f, list)
             f:write("        return ret;\n")
             f:write("    }\n\n")
 
-            f:write(string.format("    public static void FromLua(out %s ret, SLua.LuaTable tab) {\n", realName))
+            f:write(string.format("    public static void FromLua(out %s ret, SLua.LuaTable tab)\n", realName))
+            f:write("    {\n")
             f:write(string.format("        ret = new %s();\n", realName))
             f:write("        if (tab == null)\n")
             f:write("            return;\n\n")
@@ -742,7 +789,6 @@ local function exportStructLuaConv(g, csFile)
         map = {},
         builtinList = {},
         builtinMap = {},
-        unique = {}
     }
     for _, t in ipairs({"bool", "byte", "i16", "i32", "i64", "double", "string"}) do
         local ty = g.type[t]
@@ -761,7 +807,7 @@ local function exportStructLuaConv(g, csFile)
         return cache.sort[l.realName] < cache.sort[r.realName]
     end)
 
-    local f = io.open(csFile, 'w')
+    local f = io.open(csFile, 'w+b')
     f:write(string.char(0xef, 0xbb, 0xbf))
     f:write("/* generate by export tool\n * do not modify this file manually\n*/\n")
     f:write("using System;\n")
@@ -775,6 +821,99 @@ local function exportStructLuaConv(g, csFile)
     end
 
     f:write("} // class LuaConv\n")
+    f:close()
+end
+
+local genGenericLuaName2
+function genGenericLuaName2(type)
+    if type[1] == "normal" then
+        local ty = type[2]
+        if ty.tag == "builtin" then
+            return builtin2Csharp[ty.name]
+        else
+            local s = string.gsub(ty.realName, "(%.)", '_')
+            return s
+        end
+    elseif type[1] == "list" then
+        return string.format("list_%s", genGenericLuaName2(type[2]))
+    elseif type[1] == "map" then
+        return string.format("map_%s_%s", genGenericLuaName2(type[2]), genGenericLuaName2(type[3]))
+    end
+end
+
+local function genGenericLuaName(type)
+    if type[1] == "normal" then
+        return genGenericLuaName2(type)
+    elseif type[1] == "list" then
+        return string.format("generic_list.%s", genGenericLuaName2(type[2]))
+    elseif type[1] == "map" then
+        return string.format("generic_map.%s_%s", genGenericLuaName2(type[2]), genGenericLuaName2(type[3]))
+    end
+end
+
+local function exportStructToLua(g, csFile)
+    local cache = {
+        toLua = {},
+        ref = {},
+        sort = {},
+        list = {},
+        map = {},
+        builtinList = {},
+        builtinMap = {},
+        --unique = {}
+    }
+    for _, t in ipairs({"bool", "byte", "i16", "i32", "i64", "double", "string"}) do
+        local ty = g.type[t]
+        table.insert(cache.builtinList, {"list", {"normal", ty}})
+    end
+
+    for i, s in ipairs(g.exp.struct) do
+        cache.sort[s.realName] = i
+        if s.toLua then
+            table.insert(cache.toLua, s)
+            scanDependence(g, cache, s)
+        end
+    end
+
+    table.sort(cache.toLua, function (l, r)
+        return cache.sort[l.realName] < cache.sort[r.realName]
+    end)
+
+    local f = io.open(csFile, 'w+b')
+    f:write(string.char(0xef, 0xbb, 0xbf))
+    f:write("/* generate by export tool\n * do not modify this file manually\n*/\n")
+    f:write("using System;\n")
+    f:write("using System.Collections.Generic;\n\n")
+    f:write("public static class ThriftToLua\n{\n")
+    f:write("    public static void AddThrift(SLua.LuaCodeGen.ExportGenericDelegate add)\n")
+    f:write("    {\n")
+
+    for _, l in ipairs(cache.builtinList) do
+        f:write(string.format("        add(typeof(%s), \"%s\");\n", genTypeName(l), genGenericLuaName(l)))
+    end
+    for _, m in ipairs(cache.builtinMap) do
+        f:write(string.format("        add(typeof(%s), \"%s\");\n", genTypeName(m), genGenericLuaName(m)))
+    end
+    for _, s in ipairs(cache.toLua) do
+        f:write(string.format("        add(typeof(%s), null);\n", s.realName))
+
+        local tList = cache.list[s.realName]
+        if tList then
+            for _, l in ipairs(tList) do
+                f:write(string.format("        add(typeof(%s), \"%s\");\n", genTypeName(l), genGenericLuaName(l)))
+            end
+        end
+
+        local tMap = cache.map[s.realName]
+        if tMap then
+            for _, m in ipairs(tMap) do
+                f:write(string.format("        add(typeof(%s), \"%s\");\n", genTypeName(m), genGenericLuaName(m)))
+            end
+        end
+    end
+
+    f:write("    }\n")
+    f:write("} // class ThriftToLua\n")
     f:close()
 end
 
@@ -793,7 +932,7 @@ end
 local function parseThrift(srcThrift, destJson, csFile)
     local ret = require("thrift-parser").ParseFile(srcThrift)
     if not ret then
-        print(string.format("parse file failed, file:%s", srcThrift))
+        print(string.format("parse thrift file failed, file:%s", srcThrift))
         return
     end
 
@@ -803,9 +942,10 @@ local function parseThrift(srcThrift, destJson, csFile)
     }
     g.env = newEnv(g, lib.GetFileName(srcThrift))
     processData(g, ret)
+    processAfter(g)
 
     -- 导出Lua转换代码
-    exportStructLuaConv(g, csFile)
+    exportStructToLua(g, csFile)
 
     local etc ={}
     local str = json:encode({const=g.exp.const, enum=g.exp.enum, tip=g.exp.tip},
