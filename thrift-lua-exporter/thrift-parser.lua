@@ -95,7 +95,7 @@ local ts = P{
         struct = P'struct' * p_space * c_tag * p_empty * C(p_identity) * p_empty * V'body' /
             function (tag, id, mems) return {"struct", id, {tag = tag, member = mems}} end,
         body = P'{' * p_empty * Ct(V'member'^0) * p_empty * P'}',
-        member = p_decimal * p_empty * P':' * p_empty * V'opt' * p_empty * c_type * p_empty * C(p_identity) * p_empty * S','^0 * p_empty /
+        member = p_decimal * p_empty * P':' * p_empty * V'opt' * p_empty * c_type * p_empty * C(p_identity) * p_empty * S',;'^0 * p_empty /
             function(opt, type, id) return {opt = opt, type = type, id = id} end,
         opt = C'required' + C'optional',
     },
