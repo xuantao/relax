@@ -816,9 +816,9 @@ function genGenericLuaName2(g, ref)
             return s
         end
     elseif ref[1] == kRefList then
-        return string.format("list_%s", genGenericLuaName2(ref[2]))
+        return string.format("list_%s", genGenericLuaName2(g, ref[2]))
     elseif ref[1] == kRefMap then
-        return string.format("map_%s_%s", genGenericLuaName2(ref[2]), genGenericLuaName2(ref[3]))
+        return string.format("map_%s_%s", genGenericLuaName2(g, ref[2]), genGenericLuaName2(g, ref[3]))
     end
 end
 
