@@ -61,7 +61,7 @@ end
 local path = {}
 local parseFile
 local ts = P{
-    (V'include' + V'typedef' + V'const' + V'enum' + V'namespace' + V'struct') * Cp() + (p_comment + p_multi_line_comment + 1) * V(1),
+    (V'include' + V'typedef' + V'const' + V'enum' + V'namespace' + V'struct' + V'service') * Cp() + (p_comment + p_multi_line_comment + 1) * V(1),
 
     include = P'include' * p_empty * (P"'" * c_reference * P"'" +  P'"' * c_reference * P'"') /
         function (f) return {"include", getFileName(f), {file = f, vars = parseFile(f)}} end,
@@ -95,9 +95,21 @@ local ts = P{
         struct = P'struct' * p_space * c_tag * p_empty * C(p_identity) * p_empty * V'body' /
             function (tag, id, mems) return {"struct", id, {tag = tag, member = mems}} end,
         body = P'{' * p_empty * Ct(V'member'^0) * p_empty * P'}',
-        member = p_decimal * p_empty * P':' * p_empty * V'opt' * p_empty * c_type * p_empty * C(p_identity) * p_empty * S',;'^0 * p_empty /
-            function(opt, type, id) return {opt = opt, type = type, id = id} end,
-        opt = C'required' + C'optional',
+        member = p_decimal * p_empty * P':' * p_empty * V'opt' * p_empty * c_type * p_empty * C(p_identity) * p_space * S',;'^0 * p_empty /
+            function(opt, type, id) return {opt = opt ~= "" and opt or "required", type = type, id = id} end,
+        opt = C'required' + C'optional' + C'',
+    },
+
+    service = P {
+        V'service',
+        service = P'service' * p_empty * C(p_identity) * p_empty * V'body' /
+            function (id, mems) return {"service", id, mems} end,
+        body = P'{' * Ct(V'member'^0) * p_empty * P'}',
+        member = p_space * c_annotation * p_space * P'oneway' * p_empty * P'void' * p_empty * C(p_identity) * p_empty *
+            P'(' * Ct(V'argument'^0) * p_empty * P')' * S',;'^0 * S' \t'^0 * c_annotation /
+            function (pre_desc, id, args, suf_desc) return {id = id, args = args, desc = prefer(suf_desc, pre_desc)} end,
+        argument = p_empty * C(p_decimal) * p_space * P':' * p_space * c_type * p_empty * C(p_identity) * p_space * S',;'^0 /
+            function (index, type, id) return {id = id, type = type, --[[index = index]]} end
     },
 }
 

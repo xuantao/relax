@@ -68,6 +68,11 @@ function lib.Log(...)
     print(table.unpack(s))
 end
 
+function lib.EndWith(str, s)
+    local b, e = string.find(str, string.format("%s$", s))
+    return b and e
+end
+
 function lib.TrimLeft(str, pat)
     pat = pat or " \t\r\t"
     local b, l = string.find(str, string.format("^[%s]*", pat))

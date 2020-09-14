@@ -25,6 +25,10 @@ local kBuiltinTypes = {
     string = {tag = kTagBuiltin, name = "string", realName = "string", csName = "string", csConv = "ToString"},
     binary = {tag = kTagBuiltin, name = "binary", realName = "binary", csName = "",       csConv = ""}, -- csharp not support
 }
+-- 需要导出的service
+local kExportService = {"tcligs", "tcligs_lua"}
+
+local getDeepType, scanMemberDep, scanTypeRef, genCsTypeName
 
 local function concatNs(ns, name)
     if not ns or ns == "" then
@@ -75,11 +79,16 @@ local function newEnv(g, name)
 end
 
 local function onInclude(g, item)
-    local prev = g.env
-    g.env = newEnv(g, item[2])
-    processData(g, item[3].vars)
-    prev.type[item[2]] = g.env.type
-    g.env = prev
+    local name = item[2]
+    if g.type[name] then
+        g.env.type[name] = g.type[name]
+    else
+        local prev = g.env
+        g.env = newEnv(g, item[2])
+        processData(g, item[3].vars)
+        prev.type[item[2]] = g.env.type
+        g.env = prev
+    end
 end
 
 local function onNamespace(g, item)
@@ -164,12 +173,52 @@ local function onStruct(g, item)
     local d = {
         tag = kTagStruct,
         name = item[2],
+        envName = g.env.name,
         realName = concatNs(g.env.namespace, item[2]),
         member = v.member,
         luaTag = v.tag,
     }
     g.env.type[d.name] = d
     table.insert(g.exp.struct, d)
+end
+
+local getArgType
+function getArgType(env, ref)
+    if ref[1] == kRefNormal then
+        if kBuiltinTypes[ref[2]] or #lib.Split(ref[2], "%.") > 1 then
+            return ref[2]
+        else
+            return concatNs(env.name, ref[2])
+        end
+    elseif ref[1] == kRefList then
+        return string.format("list<%s>", getArgType(env, ref[2]))
+    elseif ref[1] == kRefMap then
+        return string.format("map<%s, %s>", getArgType(env, ref[2]), getArgType(env, ref[3]))
+    else
+        assert(false, ref[1], ref[2])
+    end
+end
+
+local function onService(g, item)
+    if not lib.Find(kExportService, g.env.name) then
+        return  -- 过滤
+    end
+
+    local member = {}
+    for _, m in ipairs(item[3]) do
+        local mem = {id = m.id, args = {}, desc = m.desc}
+        for _, a in ipairs(m.args) do
+            table.insert(mem.args, {id = a.id, type = getArgType(g.env, a.type)})
+        end
+        table.insert(member, mem)
+    end
+
+    local s = {
+        name = item[2],
+        envName = g.env.name,
+        member = member
+    }
+    table.insert(g.exp.service, s)
 end
 
 local procs = {
@@ -179,6 +228,7 @@ local procs = {
     const = onConst,
     enum = onEnum,
     struct = onStruct,
+    service = onService,
 }
 
 function processData(g, data)
@@ -521,7 +571,6 @@ local function exportEnumFile(enumFile, thrift, csharp)
     f:close()
 end
 
-local getDeepType, scanMemberDep, scanTypeRef, genCsTypeName
 -- 获取内部类型
 function getDeepType(g, ref)
     if ref[1] == kRefNormal then
@@ -568,7 +617,6 @@ function scanMemberDep(g, c, s)
         scanTypeRef(g, c, m.type)
     end
 end
-
 
 function genCsTypeName(g, ref)
     if ref[1] == kRefNormal then
@@ -845,6 +893,7 @@ local function exportStructToLua(g, csFile)
     end
 
     for i, s in ipairs(g.exp.struct) do
+        --if (s.envName == "tcligs" or s.envName == "shared") and not c.unique[s.realName] then
         if s.luaTag == "ToLua" and not c.unique[s.realName] then
             c.unique[s.realName] = true
             scanMemberDep(g, c, s)
@@ -876,6 +925,43 @@ local function exportStructToLua(g, csFile)
     f:close()
 end
 
+local function exportServiceToLua(services, destPath)
+    local prev = json:decode(lib.LoadFile("service.json") or "[]")
+    local mapNew = {}
+    for _, s1 in ipairs(prev) do
+        local s = {name =s1.name, envName = prev.envName, member = {}}
+        for _, m in ipairs(s1.member) do
+            s.member[m.id] = m
+        end
+        mapOld[s1.name] = s
+    end
+
+    local mapNew = {}
+    for _, s1 in ipairs(services) do
+        local s = {name =s1.name, envName = prev.envName, member = {}}
+        for _, m in ipairs(s1.member) do
+            s.member[m.id] = m
+        end
+        mapNew[s1.name] = s
+    end
+
+    for _, s in ipairs(service) do
+        if not lib.EndWith(s.name, "S2C") then
+            print("sss", s.name)
+        else
+            local serviceName = string.format("%sHandler", s.name)
+            local serviceFile = string.format("%s.lua", serviceName)
+            local fd = lib.LoadFile(serviceFile)
+            if not fd then
+                -- write new file
+            else
+
+            end
+
+        end
+    end
+end
+
 -- 解析thrift并导出成json
 -- srcThrift: 源协议文件
 -- destJson:  目标Json文件
@@ -889,7 +975,7 @@ local function parseThrift(srcThrift, destJson, csFile)
 
     local g = {
         type = setmetatable({}, {__index = kBuiltinTypes}),
-        exp = {const = {}, enum = {}, tip = {}, struct = {}}
+        exp = {const = {}, enum = {}, tip = {}, struct = {}, service = {}}
     }
     g.env = newEnv(g, lib.GetFileName(srcThrift))
     processData(g, ret)
@@ -897,6 +983,7 @@ local function parseThrift(srcThrift, destJson, csFile)
     -- 导出Lua转换代码
     exportStructLuaConv(g, "22" .. csFile)
     exportStructToLua(g, csFile)
+    exportServiceToLua(g.exp.service)
 
     local etc ={}
     local str = json:encode({const=g.exp.const, enum=g.exp.enum, tip=g.exp.tip},
