@@ -218,7 +218,7 @@ local function onService(g, item)
         envName = g.env.name,
         member = member
     }
-    table.insert(g.exp.service, s)
+    g.exp.service[concatNs(g.env.name, s.name)] = s
 end
 
 local procs = {
@@ -925,41 +925,72 @@ local function exportStructToLua(g, csFile)
     f:close()
 end
 
-local function exportServiceToLua(services, destPath)
-    local prev = json:decode(lib.LoadFile("service.json") or "[]")
-    local mapNew = {}
-    for _, s1 in ipairs(prev) do
-        local s = {name =s1.name, envName = prev.envName, member = {}}
-        for _, m in ipairs(s1.member) do
-            s.member[m.id] = m
+local function exportNewService(s, serviceName, file)
+    local f = io.open(file, 'w+b')
+    f:write(string.char(0xef, 0xbb, 0xbf))
+
+    f:write(string.format("%s = __TObject.new(tcligs.%sIface, {__type= \"%s\"})\n", serviceName, s.name, serviceName))
+    f:write("\n")
+
+    for _, m in ipairs(s.member) do
+        if m.desc and m.desc ~= "" then
+            f:write(string.format("--@[[%s]]\n", lib.Trim(m.desc)))
         end
-        mapOld[s1.name] = s
+        if #m.args > 0 then
+            f:write("--@[[")
+            for _, a in ipairs(m.args) do
+                f:write(string.format("%s %s, ", a.type, a.id))
+            end
+            f:seek("cur", -2)
+            f:write("]]\n")
+        end
+
+        f:write(string.format("function %s:%s(", serviceName, m.id))
+        if #m.args > 0 then
+            for _, a in ipairs(m.args) do
+                f:write(string.format("%s, ",a.id))
+            end
+            f:seek("cur", -2)
+        end
+        f:write(")\n")
+        f:write("    --TODO:\n")
+        f:write("end\n")
+        f:write("\n")
     end
 
-    local mapNew = {}
-    for _, s1 in ipairs(services) do
-        local s = {name =s1.name, envName = prev.envName, member = {}}
-        for _, m in ipairs(s1.member) do
-            s.member[m.id] = m
-        end
-        mapNew[s1.name] = s
-    end
+    f:write(string.format("return %s\n", serviceName))
+    f:close()
+end
 
-    for _, s in ipairs(service) do
-        if not lib.EndWith(s.name, "S2C") then
-            print("sss", s.name)
-        else
+local function mergeService(service, prev, name, fd, file)
+    print("444444444444444444")
+    return true
+end
+
+local function exportServiceToLua(servicesList, destPath)
+    local jsonFile = "service.json"
+    local prev = json:decode(lib.LoadFile(jsonFile) or "{}")
+    for key, s in pairs(servicesList) do
+        if lib.EndWith(s.name, "S2C") then
+            print(s.name)
             local serviceName = string.format("%sHandler", s.name)
-            local serviceFile = string.format("%s.lua", serviceName)
+            local serviceFile = string.format("%s/%s.lua", destPath, serviceName)
             local fd = lib.LoadFile(serviceFile)
             if not fd then
-                -- write new file
+                exportNewService(s, serviceName, serviceFile)
             else
-
+                if not mergeService(s, prev[key], serviceName, fd, serviceFile) then
+                    servicesList[key] = prev[key]
+                end
             end
-
         end
     end
+
+    local str = json:encode(servicesList, {}, {pretty = true, indent = "  ", align_keys = false})
+    local f = io.open(jsonFile, 'w')
+    f:write(string.char(0xef, 0xbb, 0xbf))
+    f:write(str)
+    f:close()
 end
 
 -- 解析thrift并导出成json
@@ -983,7 +1014,7 @@ local function parseThrift(srcThrift, destJson, csFile)
     -- 导出Lua转换代码
     exportStructLuaConv(g, "22" .. csFile)
     exportStructToLua(g, csFile)
-    exportServiceToLua(g.exp.service)
+    exportServiceToLua(g.exp.service, "lua")
 
     local etc ={}
     local str = json:encode({const=g.exp.const, enum=g.exp.enum, tip=g.exp.tip},
