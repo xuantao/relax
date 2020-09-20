@@ -240,7 +240,60 @@ local function parseSource(text)
     return ret
 end
 
-parseSource(src)
-print(longStr:match("[=[xxxxxxxxxxxx]=]"))
+local ss = [=[
+function LoginServiceS2CHandler:RecoverLoginRsp(lsErr, clientReOutN, recoverToken)
+    --@TODO:
+end
+
+
+--@Args[[tcligs.LSError lsErr, string recoverToken]]
+
+]=]
+--parseSource(src)
+--print(longStr:match("[=[xxxxxxxxxxxx]=]"))
 --print(lastComment:match(src))
+
+local p_longStr = lpeg.P {
+    lpeg.V"string",
+    equals = lpeg.P"="^0,
+    open = "[" * lpeg.Cg(lpeg.V"equals", "init") * "[" * lpeg.P"\n"^-1,
+    close = "]" * lpeg.C(lpeg.V"equals") * "]",
+    closeeq = lpeg.Cmt(lpeg.V"close" * lpeg.Cb("init"), function (s, i, a, b) return a == b end),
+    string = lpeg.V"open" * lpeg.C((lpeg.P(1) - lpeg.V"closeeq")^0) * lpeg.V"close" / 1,
+}
+
+local p_comment = lpeg.P"--" * (p_longStr / 0) + lpeg.P"--" * (lpeg.P(1) - lpeg.P"\n")^0
+local p_desc = lpeg.P"\n" * lpeg.S" \r\t"^0 * p_comment * (lpeg.S" \r\t\n" + p_comment)^0 * lpeg.P(-1)
+
+local function parseDescPos(source)
+    local pos = 1
+    local len = #source
+    local ret = len
+    while pos < len do
+        local p = lpeg.match(p_desc, source, pos)
+        
+        if p then
+            ret = p + 1
+            break
+        else
+            p = lpeg.match(p_comment, source, pos)
+            print("p", pos, p)
+            pos = p or (pos + 1)
+        end
+    end
+    return ret
+end
+local ok = [[
+
+-- sss
+]]
+
+local pos = parseDescPos(ss)
+print(pos)
+print(string.sub(ss, pos))
+
+print("222222222222")
+pos = parseDescPos(ok)
+print(pos)
+print(string.sub(ok, pos))
 

@@ -4,7 +4,8 @@
 -- 导出目标有: EnumDef.lua, UIErrorCodeTab.xls, UITipsNotifyCodeTab.xls
 local lib = require("lib")
 local gbk = require("gbk")
-local json, objdef = require("json")
+local json = require("json")
+local service = require "exporter.service"
 local processData
 -- 引用类型
 local kRefNormal    = "normal"
@@ -971,30 +972,12 @@ local function mergeService(service, prev, name, fd, file)
     return true
 end
 
-local function exportServiceToLua(servicesList, destPath)
-    local jsonFile = "service.json"
-    local prev = json:decode(lib.LoadFile(jsonFile) or "{}")
-    for key, s in pairs(servicesList) do
+local function exportServiceToLua(servicesList, path)
+    for _, s in pairs(servicesList) do
         if lib.EndWith(s.name, "S2C") then
-            print(s.name)
-            local serviceName = string.format("%sHandler", s.name)
-            local serviceFile = string.format("%s/%s.lua", destPath, serviceName)
-            local fd = lib.LoadFile(serviceFile)
-            if not fd then
-                exportNewService(s, serviceName, serviceFile)
-            else
-                if not mergeService(s, prev[key], serviceName, fd, serviceFile) then
-                    servicesList[key] = prev[key]
-                end
-            end
+            service.export(s, path)
         end
     end
-
-    local str = json:encode(servicesList, {}, {pretty = true, indent = "  ", align_keys = false})
-    local f = io.open(jsonFile, 'w')
-    f:write(string.char(0xef, 0xbb, 0xbf))
-    f:write(str)
-    f:close()
 end
 
 -- 解析thrift并导出成json
