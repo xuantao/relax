@@ -263,7 +263,7 @@ local p_longStr = lpeg.P {
 }
 
 local p_comment = lpeg.P"--" * (p_longStr / 0) + lpeg.P"--" * (lpeg.P(1) - lpeg.P"\n")^0
-local p_desc = lpeg.P"\n" * lpeg.S" \r\t"^0 * p_comment * (lpeg.S" \r\t\n" + p_comment)^0 * lpeg.P(-1)
+local p_desc = lpeg.P"\n" * lpeg.S" \r\t"^0 * p_comment * (lpeg.S" \r\t\n" + p_comment + p_longStr)^0 * lpeg.P(-1)
 
 local function parseDescPos(source)
     local pos = 1
@@ -273,7 +273,7 @@ local function parseDescPos(source)
         local p = lpeg.match(p_desc, source, pos)
         
         if p then
-            ret = p + 1
+            ret = pos + 1
             break
         else
             p = lpeg.match(p_comment, source, pos)
@@ -287,7 +287,7 @@ local ok = [[
 
 -- sss
 ]]
-
+--[[
 local pos = parseDescPos(ss)
 print(pos)
 print(string.sub(ss, pos))
@@ -296,4 +296,20 @@ print("222222222222")
 pos = parseDescPos(ok)
 print(pos)
 print(string.sub(ok, pos))
+]]
+
+-- 提取器
+local c_annotation_1 = (P'//' * P'/'^0 * C((1 - P'\n')^0) * (P'\n' + P(-1)) +
+    P'/*' * (P'*' - P'*/')^0 * C((1 - P'*/')^0) * P'*/')                   -- 提取注释
+local c_annotation_2 = (P'//' * P'/'^0 * C((1 - P'\n')^0) * (P'\n' + P(-1)))^-1 / 1
+
+local s1 = [[// 处于排队状态时，排队完成后服务器推送排队登录完成回报
+//oneway void OnQueueComplete(1:LSError lsErr, 2:LoginRspData data)
+]]
+local s2 = "// 处于排队状态时，排队完成后服务器推送排队登录完成回报"
+print(c_annotation_1:match(s1))
+--print(c_annotation_1:match(s2))
+print("2222222222222")
+--print(c_annotation_2:match(s1))
+--print(c_annotation_2:match(s2))
 

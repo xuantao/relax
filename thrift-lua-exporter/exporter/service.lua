@@ -16,7 +16,7 @@ local p_longStr = lpeg.P {
 }
 
 local p_comment = lpeg.P"--" * (p_longStr / 0) + lpeg.P"--" * (lpeg.P(1) - lpeg.P"\n")^0
-local p_desc = lpeg.P"\n" * lpeg.S" \r\t"^0 * p_comment * (lpeg.S" \r\t\n" + p_comment)^0 * lpeg.P(-1)
+local p_desc = lpeg.P"\n" * lpeg.S" \r\t"^0 * p_comment * (lpeg.S" \r\t\n" + p_comment + p_longStr)^0 * lpeg.P(-1)
 
 local _parseAstName
 function _parseAstName(smt, nl)
@@ -112,8 +112,7 @@ local function parseServiceAst(source, handlerName, ast)
     -- 设置区块结束位置
     local block = blocks[1]
     for i = 2, #blocks do
-        block.epos = blocks[i].pos - 1
-        print()
+        block.epos = blocks[i].pos
         block = blocks[i]
     end
     block.epos = #source
@@ -128,14 +127,17 @@ local function preProcessService(handler, service)
     local hmMap = {}
     local smMap = {}
     for _, m in ipairs(service.member) do
+        print("service", m.id)
         smMap[m.id] = true
     end
     for _, m in ipairs(handler.member) do
+        print("handler", m.id)
         hmMap[m.id] = m
         if not smMap[m.id] then
             delMap[m.id] = true -- mark deleted
         end
     end
+    print("ddddddddddd")
 
     local prevId
     local aheadList = {}
@@ -182,7 +184,7 @@ local function parseDescPos(source)
     while pos < len do
         local p = lpeg.match(p_desc, source, pos)
         if p then
-            ret = p + 1
+            ret = pos-- + 1
             break
         else
             p = lpeg.match(p_comment, source, pos)
@@ -217,7 +219,6 @@ local function addServiceMember(f, m, handlerName)
     f:write(")\n")
     f:write("    --@TODO:\n")
     f:write("end\n")
-    f:write("\n")
 end
 
 local function newServiceHandler(service, handlerName, handlerFile)
@@ -229,6 +230,7 @@ local function newServiceHandler(service, handlerName, handlerFile)
 
     for _, m in ipairs(service.member) do
         addServiceMember(f, m, handlerName)
+        f:write("\n")
     end
 
     f:write(string.format("return %s\n", handlerName))
@@ -252,7 +254,7 @@ local function updateServiceMember(f, hm, sm, code, desc)
     -- 去掉废弃标记
     local b, e = string.find(desc, kDiscardPatt)
     if b then
-        desc = string.format("%s%s", string.sub(desc, 1, b -1), string.sub(desc, e))
+        desc = string.format("%s%s", string.sub(desc, 1, b - 1), string.sub(desc, e))
     end
     if checkMemberArgsChanged(hm, sm) then
         f:write(desc)
@@ -307,6 +309,8 @@ local function updateServiceHandler(handlerName, handlerFile, source, handler, s
     local f = io.open(handlerFile, 'w+b')
     f:write(string.char(0xef, 0xbb, 0xbf))  -- utf8
 
+    lib.Log(delMap)
+
     local lastPos = 1
     local lastDesc = ""
     for _, exp in ipairs(expQue) do
@@ -315,17 +319,15 @@ local function updateServiceHandler(handlerName, handlerFile, source, handler, s
         lastPos = epos
 
         local desc = lastDesc
-        local sub = string.sub(source, pos, epos)
+        local sub = string.sub(source, pos, epos - 1)
         local dpos = parseDescPos(sub)
         local code = string.sub(sub, 1, dpos - 1)
         lastDesc = string.sub(sub, dpos)
-        print("11111111111111", dpos)
-        print(code)
 
         if delMap[exp.hm.id] then
             f:write(desc)
             if not string.find(desc, kDiscardPatt) then
-                f:write("\n", kDiscard, "\n")
+                f:write(kDiscard, "\n")
             end
             f:write(code)
         elseif exp.sm then
@@ -337,11 +339,13 @@ local function updateServiceHandler(handlerName, handlerFile, source, handler, s
 
         if exp.after then
             for _, sm in ipairs(exp.after) do
+                f:write("\n")
                 addServiceMember(f, sm, handlerName)
             end
         end
     end
 
+    f:write(string.sub(source, lastPos - 1))
     f:close()
 end
 
