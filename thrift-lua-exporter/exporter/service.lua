@@ -127,17 +127,14 @@ local function preProcessService(handler, service)
     local hmMap = {}
     local smMap = {}
     for _, m in ipairs(service.member) do
-        print("service", m.id)
         smMap[m.id] = true
     end
     for _, m in ipairs(handler.member) do
-        print("handler", m.id)
         hmMap[m.id] = m
         if not smMap[m.id] then
             delMap[m.id] = true -- mark deleted
         end
     end
-    print("ddddddddddd")
 
     local prevId
     local aheadList = {}
@@ -184,7 +181,7 @@ local function parseDescPos(source)
     while pos < len do
         local p = lpeg.match(p_desc, source, pos)
         if p then
-            ret = pos-- + 1
+            ret = pos
             break
         else
             p = lpeg.match(p_comment, source, pos)
@@ -195,8 +192,6 @@ local function parseDescPos(source)
 end
 
 local function addServiceMember(f, m, handlerName)
-    print("handlername", handlerName)
-    lib.Log(m)
     if m.desc and m.desc ~= "" then
         f:write(string.format("--@Node[[%s]]\n", lib.Trim(m.desc)))
     end
@@ -238,7 +233,7 @@ local function newServiceHandler(service, handlerName, handlerFile)
 end
 
 local function checkMemberArgsChanged(hm, sm)
-    if #hm.args ~= #sm.args then
+    if #hm.args - 1 ~= #sm.args then
         return true
     end
 
@@ -256,7 +251,7 @@ local function updateServiceMember(f, hm, sm, code, desc)
     if b then
         desc = string.format("%s%s", string.sub(desc, 1, b - 1), string.sub(desc, e))
     end
-    if checkMemberArgsChanged(hm, sm) then
+    if not checkMemberArgsChanged(hm, sm) then
         f:write(desc)
         f:write(code)
         return
@@ -265,7 +260,7 @@ local function updateServiceMember(f, hm, sm, code, desc)
     -- 更新参数描述列表
     b, e = string.find(desc, "--@Args%[%[.-%]%]")
     if b then
-        f:write(string.sub(desc, 1, b))
+        f:write(string.sub(desc, 1, b-1))
     else
         f:write(desc)
     end
@@ -275,32 +270,30 @@ local function updateServiceMember(f, hm, sm, code, desc)
             f:write(string.format("%s %s, ", a.type, a.id))
         end
         f:seek("cur", -2)
-        f:write("]]\n")
+        f:write("]]")
     end
     if b then
         f:write(string.sub(desc, e+1))
     end
 
     -- 更新参数列表
-    local func = hm.func
-    f:write(string.format("function %s:%s(", handlerName, m.id))
-    if #func.args > 0 then
-        for _, a in ipairs(func.args) do
-            f:write(string.format("%s, ",a.id))
+    f:write(string.format("function %s:%s(", handlerName, hm.id))
+    if #sm.args > 0 then
+        for _, arg in ipairs(sm.args) do
+            f:write(string.format("%s, ", arg.id))
         end
         f:seek("cur", -2)
     end
     f:write(")\n")
 
     -- 更新提示
-    local offPos = hm.pos
-    f:write("\n    --@TODO: arguments changed")
-    b = string.find(code, hm.body.pos - offPos, "--@TODO:")
+    f:write("    --@TODO: arguments changed")
+    b = string.find(code, "--@TODO:", hm.body.pos - hm.pos)
     if b then
         local p = string.find(code, b, '\n')
         f:write(string.sub(code, p + 1))
     else
-        f:write(string.sub(code, hm.body.pos - offPos))
+        f:write(string.sub(code, hm.body.pos - hm.pos))
     end
 end
 
@@ -308,8 +301,6 @@ local function updateServiceHandler(handlerName, handlerFile, source, handler, s
     local expQue, delMap = preProcessService(handler, service)
     local f = io.open(handlerFile, 'w+b')
     f:write(string.char(0xef, 0xbb, 0xbf))  -- utf8
-
-    lib.Log(delMap)
 
     local lastPos = 1
     local lastDesc = ""
@@ -376,20 +367,6 @@ local function exportService(service, path)
     updateServiceHandler(handlerName, handlerFile .. ".txt", source, handler, service)
     return
 end
-
---[[
-local tmp_file = "loader.lua"
-local f = io.open(tmp_file, "r")
-local fd = f:read("*a")
-f:close()
-local ast, err = parser.parse(fd, "loader.lua")
---lib.Log(ast)
-parseServiceAst(fd, ast, "InitServiceS2CHandler")
---lib.Log(parseServiceAst(fd, ast, ""))
-]]
---@d[[]]
---@p[[]]
---@TODO: 
 
 return {export = exportService}
 

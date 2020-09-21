@@ -299,17 +299,48 @@ print(string.sub(ok, pos))
 ]]
 
 -- 提取器
-local c_annotation_1 = (P'//' * P'/'^0 * C((1 - P'\n')^0) * (P'\n' + P(-1)) +
-    P'/*' * (P'*' - P'*/')^0 * C((1 - P'*/')^0) * P'*/')                   -- 提取注释
+local c_annotation_1 = P'//' * P'/'^0 * C((1 - P'\n')^0) * (P'\n' + P(-1)) +
+    P'/*' * (P'*' - P'*/')^0 * C((1 - P'*/')^0) * P'*/'                   -- 提取注释
 local c_annotation_2 = (P'//' * P'/'^0 * C((1 - P'\n')^0) * (P'\n' + P(-1)))^-1 / 1
 
 local s1 = [[// 处于排队状态时，排队完成后服务器推送排队登录完成回报
 //oneway void OnQueueComplete(1:LSError lsErr, 2:LoginRspData data)
+/*xuantao*/
 ]]
 local s2 = "// 处于排队状态时，排队完成后服务器推送排队登录完成回报"
-print(c_annotation_1:match(s1))
+lib.Log(Ct(c_annotation_1^0):match(s1))
 --print(c_annotation_1:match(s2))
 print("2222222222222")
 --print(c_annotation_2:match(s1))
 --print(c_annotation_2:match(s2))
 
+
+
+local s1 = [[service LoginServiceS2C {
+    // 处于排队状态时，排队完成后服务器推送排队登录完成回报
+    //oneway void OnQueueComplete(1:LSError lsErr, 2:LoginRspData data)
+
+    // 处于排队状态时，排队完成后服务器推送排队登录完成回报
+    oneway void OnQueueComplete(1:LSError lsErr, 2:LoginRspData data)
+
+}
+]]
+
+--local ret = parseSource(s1)
+--lib.Log(ret)
+local service = P {
+    V'service',
+    service = P'service' * p_empty * C(p_identity) * p_empty * V'body' /
+        function (id, mems) return {"service", id, mems} end,
+    body = P'{' * Ct((V'member')^0) * p_empty * P'}',
+    member = Ct((p_space * V"annotation")^0) * p_space * P'oneway' * p_empty * P'void' * p_empty * C(p_identity) * p_empty *
+        P'(' * Ct(V'argument'^0) * p_empty * P')' * S',;'^0 * S' \t'^0 * c_annotation /
+        function (pre_desc, id, args, suf_desc) return {id = id, args = args, desc = prefer(suf_desc, pre_desc)} end,
+    argument = p_empty * C(p_decimal) * p_space * P':' * p_space * c_type * p_empty * C(p_identity) * p_space * S',;'^0 /
+        function (index, type, id) return {id = id, type = type, --[[index = index]]} end,
+    annotation = C(P'//' * P'/'^0 * C((1 - P'\n')^0) * (P'\n' + P(-1)) +
+        P'/*' * (P'*' - P'*/')^0 * C((1 - P'*/')^0) * P'*/'),
+}
+print("11111111111")
+lib.Log(service:match(s1))
+print("22222222222")

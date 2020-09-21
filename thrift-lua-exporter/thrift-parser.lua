@@ -54,7 +54,17 @@ local function getFileName(f)
 end
 
 local function prefer(sur, pre)
-    return sur and sur ~= "" and sur or pre
+    if sur and sur ~= "" then
+        return sur
+    end
+    if type(pre) == "table" then
+        if #pre > 0 then
+            return pre[#pre]
+        else
+            return ""
+        end
+    end
+    return pre
 end
 
 -- thrift scanner
@@ -105,11 +115,13 @@ local ts = P{
         service = P'service' * p_empty * C(p_identity) * p_empty * V'body' /
             function (id, mems) return {"service", id, mems} end,
         body = P'{' * Ct(V'member'^0) * p_empty * P'}',
-        member = p_space * c_annotation * p_space * P'oneway' * p_empty * P'void' * p_empty * C(p_identity) * p_empty *
+        member = Ct((p_space * V"annotation")^0) * p_space * P'oneway' * p_empty * P'void' * p_empty * C(p_identity) * p_empty *
             P'(' * Ct(V'argument'^0) * p_empty * P')' * S',;'^0 * S' \t'^0 * c_annotation /
             function (pre_desc, id, args, suf_desc) return {id = id, args = args, desc = prefer(suf_desc, pre_desc)} end,
         argument = p_empty * C(p_decimal) * p_space * P':' * p_space * c_type * p_empty * C(p_identity) * p_space * S',;'^0 /
-            function (index, type, id) return {id = id, type = type, --[[index = index]]} end
+            function (index, type, id) return {id = id, type = type, --[[index = index]]} end,
+        annotation = C(P'//' * P'/'^0 * C((1 - P'\n')^0) * (P'\n' + P(-1)) +
+            P'/*' * (P'*' - P'*/')^0 * C((1 - P'*/')^0) * P'*/'),
     },
 }
 
@@ -146,32 +158,6 @@ function parseFile(file)
     table.remove(path, #path)
     return ret
 end
-
-local s1 = [[
-    service LoginServiceS2C {
-        // 处于排队状态时，排队完成后服务器推送排队登录完成回报
-        //oneway void OnQueueComplete(1:LSError lsErr, 2:LoginRspData data)
-    
-        // 处于排队状态时，排队完成后服务器推送排队登录完成回报
-        oneway void OnQueueComplete(1:LSError lsErr, 2:LoginRspData data)
-
-    }
-]]
-
---local ret = parseSource(s1)
---lib.Log(ret)
-local service = P {
-    V'service',
-    service = P'service' * p_empty * C(p_identity) * p_empty * V'body' /
-        function (id, mems) return {"service", id, mems} end,
-    body = P'{' * Ct((V'member')^0) * p_empty * P'}',
-    member = p_space * c_annotation * p_space * P'oneway' * p_empty * P'void' * p_empty * C(p_identity) * p_empty *
-        P'(' * Ct(V'argument'^0) * p_empty * P')' * S',;'^0 * S' \t'^0 * c_annotation /
-        function (pre_desc, id, args, suf_desc) return {id = id, args = args, desc = prefer(suf_desc, pre_desc)} end,
-    argument = p_empty * C(p_decimal) * p_space * P':' * p_space * c_type * p_empty * C(p_identity) * p_space * S',;'^0 /
-        function (index, type, id) return {id = id, type = type, --[[index = index]]} end
-}
-print(service:match(s1))
 
 return {
     ParseSource = parseSource,
