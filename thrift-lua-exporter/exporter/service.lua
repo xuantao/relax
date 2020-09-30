@@ -193,7 +193,9 @@ end
 
 local function addServiceMember(f, m, handlerName)
     if m.desc and m.desc ~= "" then
-        f:write(string.format("--@Node[[%s]]\n", lib.Trim(m.desc)))
+        local s = lib.Trim(m.desc)
+        s = string.gsub(s, "(\n)", ' ')
+        f:write(string.format("--@Node[[%s]]\n", s))
     end
     if #m.args > 0 then
         f:write("--@Args[[")
@@ -290,7 +292,7 @@ local function updateServiceMember(f, hm, sm, code, desc)
     f:write("    --@TODO: arguments changed")
     b = string.find(code, "--@TODO:", hm.body.pos - hm.pos)
     if b then
-        local p = string.find(code, b, '\n')
+        local p = string.find(code, '\n', b)
         f:write(string.sub(code, p + 1))
     else
         f:write(string.sub(code, hm.body.pos - hm.pos))
@@ -369,4 +371,3 @@ local function exportService(service, path)
 end
 
 return {export = exportService}
-

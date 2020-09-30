@@ -2,33 +2,15 @@
 -- 将C#、thrift定义的枚举文件导出到UI配置文件
 -- 相关中间有: thrift.json, csharp.json
 -- 导出目标有: EnumDef.lua, UIErrorCodeTab.xls, UITipsNotifyCodeTab.xls
-local lib = require("lib")
-local gbk = require("gbk")
-local json = require("json")
+local lib = require "lib"
+local gbk = require "gbk"
+local json = require "json"
 local service = require "exporter.service"
-local processData
--- 引用类型
-local kRefNormal    = "normal"
-local kRefList      = "list"
-local kRefMap       = "map"
--- 类型标签
-local kTagBuiltin   = "builtin"
-local kTagEnum      = "enum"
-local kTagStruct    = "struct"
--- 内建类型
-local kBuiltinTypes = {
-    bool   = {tag = kTagBuiltin, name = "bool",   realName = "bool",   csName = "bool",   csConv = "ToBoolean"},
-    byte   = {tag = kTagBuiltin, name = "byte",   realName = "byte",   csName = "sbyte",  csConv = "ToSByte"},
-    i16    = {tag = kTagBuiltin, name = "i16",    realName = "i16",    csName = "short",  csConv = "ToInt16"},
-    i32    = {tag = kTagBuiltin, name = "i32",    realName = "i32",    csName = "int",    csConv = "ToInt32"},
-    i64    = {tag = kTagBuiltin, name = "i64",    realName = "i64",    csName = "long",   csConv = "ToInt64"},
-    double = {tag = kTagBuiltin, name = "double", realName = "double", csName = "double", csConv = "ToDouble"},
-    string = {tag = kTagBuiltin, name = "string", realName = "string", csName = "string", csConv = "ToString"},
-    binary = {tag = kTagBuiltin, name = "binary", realName = "binary", csName = "",       csConv = ""}, -- csharp not support
-}
+local def = require "thrift-def"
+
 -- 需要导出的service
 local kExportService = {"tcligs", "tcligs_lua"}
-
+local processData
 local getDeepType, scanMemberDep, scanTypeRef, genCsTypeName
 
 local function concatNs(ns, name)
@@ -124,7 +106,7 @@ local function onEnum(g, item)
     local lastVal = -1
     local e = item[3]
     local d = {
-        tag = kTagEnum,
+        tag = def.kTagEnum,
         name = item[2],
         realName = concatNs(g.env.namespace, item[2]),
         values = {},
@@ -152,13 +134,13 @@ end
 
 local normaliszeType
 function normaliszeType(env, ref)
-    if ref[1] == kRefNormal then
-        if not kBuiltinTypes[ref[2]] then
+    if ref[1] == def.kRefNormal then
+        if not def.kBuiltinTypes[ref[2]] then
             ref[2] = concatNs(env.name, ref[2])
         end
-    elseif ref[1] == kRefList then
+    elseif ref[1] == def.kRefList then
         normaliszeType(env, ref[2])
-    elseif ref[1] == kRefMap then
+    elseif ref[1] == def.kRefMap then
         normaliszeType(env, ref[2])
         normaliszeType(env, ref[3])
     end
@@ -172,7 +154,7 @@ local function onStruct(g, item)
     end
 
     local d = {
-        tag = kTagStruct,
+        tag = def.kTagStruct,
         name = item[2],
         envName = g.env.name,
         realName = concatNs(g.env.namespace, item[2]),
@@ -185,15 +167,15 @@ end
 
 local getArgType
 function getArgType(env, ref)
-    if ref[1] == kRefNormal then
-        if kBuiltinTypes[ref[2]] or #lib.Split(ref[2], "%.") > 1 then
+    if ref[1] == def.kRefNormal then
+        if def.kBuiltinTypes[ref[2]] or #lib.Split(ref[2], "%.") > 1 then
             return ref[2]
         else
             return concatNs(env.name, ref[2])
         end
-    elseif ref[1] == kRefList then
+    elseif ref[1] == def.kRefList then
         return string.format("list<%s>", getArgType(env, ref[2]))
-    elseif ref[1] == kRefMap then
+    elseif ref[1] == def.kRefMap then
         return string.format("map<%s, %s>", getArgType(env, ref[2]), getArgType(env, ref[3]))
     else
         assert(false, ref[1], ref[2])
@@ -574,26 +556,27 @@ end
 
 -- 获取内部类型
 function getDeepType(g, ref)
-    if ref[1] == kRefNormal then
+    if ref[1] == def.kRefNormal then
         return getType(g.type, ref[2])
-    elseif ref[1] == kRefList then
+    elseif ref[1] == def.kRefList then
         return getDeepType(g, ref[2])
-    elseif ref[1] == kRefMap then
+    elseif ref[1] == def.kRefMap then
         return getDeepType(g, ref[3])
     else
         assert(false, ref[1], ref[2])
     end
 end
+
 -- 获取扫描类型依赖
 function scanTypeRef(g, c, ref)
-    if ref[1] == kRefNormal then
+    if ref[1] == def.kRefNormal then
         local type = getType(g.type, ref[2])
-        if type.tag == kTagStruct and not c.unique[type.realName] then
+        if type.tag == def.kTagStruct and not c.unique[type.realName] then
             c.unique[type.realName] = true
             scanMemberDep(g, c, type)
             table.insert(c.exp.struct, type)
         end
-    elseif ref[1] == kRefList then
+    elseif ref[1] == def.kRefList then
         scanTypeRef(g, c, ref[2])
         local realName = genCsTypeName(g, ref)
         local type = getDeepType(g, ref[2])
@@ -601,7 +584,7 @@ function scanTypeRef(g, c, ref)
             c.unique[realName] = true
             table.insert(c.exp.list, ref)
         end
-    elseif ref[1] == kRefMap then
+    elseif ref[1] == def.kRefMap then
         scanTypeRef(g, c, ref[2])
         scanTypeRef(g, c, ref[3])
         local realName = genCsTypeName(g, ref)
@@ -620,25 +603,25 @@ function scanMemberDep(g, c, s)
 end
 
 function genCsTypeName(g, ref)
-    if ref[1] == kRefNormal then
+    if ref[1] == def.kRefNormal then
         local type = getType(g.type, ref[2])
-        if type.tag == kTagBuiltin then
-            return kBuiltinTypes[type.name].csName
+        if type.tag == def.kTagBuiltin then
+            return def.kBuiltinTypes[type.name].csName
         else
             return type.realName
         end
-    elseif ref[1] == kRefList then
+    elseif ref[1] == def.kRefList then
         return string.format("List<%s>", genCsTypeName(g, ref[2]))
-    elseif ref[1] == kRefMap then
+    elseif ref[1] == def.kRefMap then
         return string.format("Dictionary<%s, %s>", genCsTypeName(g, ref[2]), genCsTypeName(g, ref[3]))
     end
 end
 
 local function convBuiltinValue(type)
     if type.tag == "builtin" then
-        return kBuiltinTypes[type.name].csName
+        return def.kBuiltinTypes[type.name].csName
     elseif type.tag == "enum" then
-        return string.format("(%s)%s", type.realName, kBuiltinTypes['i32'].csName)
+        return string.format("(%s)%s", type.realName, def.kBuiltinTypes['i32'].csName)
     end
 end
 
@@ -647,7 +630,7 @@ local function exportStructList(f, g, list)
         local realName = genCsTypeName(g, ref)
         local deepRef = ref[2]
         local deepType
-        if deepRef[1] == kRefNormal then
+        if deepRef[1] == def.kRefNormal then
             deepType = getType(g.type, deepRef[2])
         end
         f:write(string.format("    public static SLua.LuaTable ToLua(%s list)\n", realName))
@@ -657,7 +640,7 @@ local function exportStructList(f, g, list)
         f:write("        int idx = 0;\n")
         f:write("        var ret = new SLua.LuaTable(Lua.Instance.luaState);\n")
         f:write("        foreach (var val in list)\n")
-        if deepType and deepType.tag ~= kTagStruct then
+        if deepType and deepType.tag ~= def.kTagStruct then
             f:write("            ret[++idx] = val;\n")
         else
             f:write("            ret[++idx] = ToLua(val);\n")
@@ -671,13 +654,13 @@ local function exportStructList(f, g, list)
         f:write("        if (tab == null)\n")
         f:write("            return;\n\n")
         f:write("        foreach (var pair in tab)\n")
-        if not deepType or deepType.tag == kTagStruct then
+        if not deepType or deepType.tag == def.kTagStruct then
             f:write("        {\n")
             f:write(string.format("            %s val;\n", genCsTypeName(g, deepRef)))
             f:write("            FromLua(out val, pair.value as SLua.LuaTable);\n")
             f:write("            ret.Add(val);\n")
             f:write("        }\n")
-        elseif deepType.tag == kTagBuiltin then
+        elseif deepType.tag == def.kTagBuiltin then
             f:write(string.format("            ret.Add(Convert.%s(pair.value));\n", deepType.csConv))
         else
             f:write(string.format("            ret.Add((%s)Convert.ToInt32(pair.value));\n", deepType.realName))
@@ -692,10 +675,10 @@ local function exportStructMap(f, g, map)
         local keyRef = ref[2]
         local valRef = ref[3]
         local keyType, valType
-        if keyRef[1] == kRefNormal then
+        if keyRef[1] == def.kRefNormal then
             keyType = getType(g.type, keyRef[2])
         end
-        if valRef[1] == kRefNormal then
+        if valRef[1] == def.kRefNormal then
             valType = getType(g.type, valRef[2])
         end
 
@@ -705,7 +688,7 @@ local function exportStructMap(f, g, map)
         f:write("            return null;\n\n")
         f:write("        var ret = new SLua.LuaTable(Lua.Instance.luaState);\n")
         f:write("        foreach (var pair in dic)\n")
-        if not valType or valType.tag == kTagStruct then
+        if not valType or valType.tag == def.kTagStruct then
             f:write("            ret[pair.Key] = ToLua(pair.Value);\n")
         else
             f:write("            ret[pair.Key] = pair.Value;\n")
@@ -720,16 +703,16 @@ local function exportStructMap(f, g, map)
         f:write("            return;\n\n")
         f:write("        foreach (var pair in tab)\n")
         f:write("        {\n")
-        if keyType.tag == kTagEnum then
+        if keyType.tag == def.kTagEnum then
             f:write(string.format("            var key = (%s)Convert.ToInt32(pair.key);\n", keyType.realName))
         else
             f:write(string.format("            var key = Convert.%s(pair.key);\n", keyType.csConv))
         end
 
-        if not valType or valType.tag == kTagStruct then
+        if not valType or valType.tag == def.kTagStruct then
             f:write(string.format("            %s val;\n", genCsTypeName(g, valRef)))
             f:write("            FromLua(out val, pair.value as SLua.LuaTable);\n")
-        elseif valType.tag == kTagEnum then
+        elseif valType.tag == def.kTagEnum then
             f:write(string.format("            var val = (%s)Convert.ToInt32(pair.value);\n", valType.realName))
         else
             f:write(string.format("            var val = %s(pair.value);\n", valType.csConv))
@@ -757,10 +740,10 @@ local function exportStructLuaConv2(f, g, s)
     for _, m in ipairs(s.member) do
         local type
         local ref = m.type
-        if ref[1] == kRefNormal then
+        if ref[1] == def.kRefNormal then
             type = getType(g.type, ref[2])
         end
-        if not type or type.tag == kTagStruct then
+        if not type or type.tag == def.kTagStruct then
             f:write(string.format("        ret[\"%s\"] = ToLua(obj.%s);\n", m.id, m.id))
         else
             f:write(string.format("        ret[\"%s\"] = obj.%s;\n", m.id, m.id))
@@ -781,10 +764,10 @@ local function exportStructLuaConv2(f, g, s)
         local type
         local ref = m.type
         local realName = genCsTypeName(g, ref)
-        if ref[1] == kRefNormal then
+        if ref[1] == def.kRefNormal then
             type = getType(g.type, ref[2])
         end
-        if not type or type.tag == kTagStruct then
+        if not type or type.tag == def.kTagStruct then
             if m.opt == "optional" then
                 f:write(string.format("        tmp = tab[\"%s\"];\n", m.id))
                 f:write("        if (tmp != null)\n")
@@ -801,13 +784,13 @@ local function exportStructLuaConv2(f, g, s)
         else
             if m.opt == "optional" then
                 f:write(string.format("        tmp = tab[\"%s\"];", m.id))
-                if type.tag == kTagEnum then
+                if type.tag == def.kTagEnum then
                     f:write(string.format(" if (tmp != null) ret.%s = (%s)Convert.ToInt32(tmp);\n", m.id, realName))
                 else
                     f:write(string.format(" if (tmp != null) ret.%s = Convert.%s(tmp);\n", m.id, type.csConv))
                 end
             else
-                if type.tag == kTagEnum then
+                if type.tag == def.kTagEnum then
                     f:write(string.format("        ret.%s = (%s)Convert.ToInt32(tab[\"%s\"]);\n", m.id, realName, m.id))
                 else
                     f:write(string.format("        ret.%s = Convert.%s(tab[\"%s\"]);\n", m.id, type.csConv, m.id))
@@ -825,7 +808,7 @@ local function exportStructLuaConv(g, csFile)
     }
 
     for _, t in ipairs({"bool", "byte", "i16", "i32", "i64", "double", "string"}) do
-        local ref = {kRefList, {kRefNormal, t}}
+        local ref = {def.kRefList, {def.kRefNormal, t}}
         c.unique[genCsTypeName(g, ref)] = true
         table.insert(c.exp.list, ref)
     end
@@ -856,27 +839,27 @@ end
 
 local genGenericLuaName2
 function genGenericLuaName2(g, ref)
-    if ref[1] == kRefNormal then
+    if ref[1] == def.kRefNormal then
         local type = getType(g.type, ref[2])
-        if type.tag == kTagBuiltin then
+        if type.tag == def.kTagBuiltin then
             return type.csName
         else
             local s = string.gsub(type.realName, "(%.)", '_')
             return s
         end
-    elseif ref[1] == kRefList then
+    elseif ref[1] == def.kRefList then
         return string.format("list_%s", genGenericLuaName2(g, ref[2]))
-    elseif ref[1] == kRefMap then
+    elseif ref[1] == def.kRefMap then
         return string.format("map_%s_%s", genGenericLuaName2(g, ref[2]), genGenericLuaName2(g, ref[3]))
     end
 end
 
 local function genGenericLuaName(g, ref)
-    if ref[1] == kRefNormal then
+    if ref[1] == def.kRefNormal then
         return genGenericLuaName2(g, ref)
-    elseif ref[1] == kRefList then
+    elseif ref[1] == def.kRefList then
         return string.format("generic_list.%s", genGenericLuaName2(g, ref[2]))
-    elseif ref[1] == kRefMap then
+    elseif ref[1] == def.kRefMap then
         return string.format("generic_map.%s_%s", genGenericLuaName2(g, ref[2]), genGenericLuaName2(g, ref[3]))
     end
 end
@@ -888,7 +871,7 @@ local function exportStructToLua(g, csFile)
     }
 
     for _, t in ipairs({"bool", "byte", "i16", "i32", "i64", "double", "string"}) do
-        local ref = {kRefList, {kRefNormal, t}}
+        local ref = {def.kRefList, {def.kRefNormal, t}}
         c.unique[genCsTypeName(g, ref)] = true
         table.insert(c.exp.list, ref)
     end
@@ -926,52 +909,6 @@ local function exportStructToLua(g, csFile)
     f:close()
 end
 
-local function exportNewService(s, serviceName, file)
-    local f = io.open(file, 'w+b')
-    f:write(string.char(0xef, 0xbb, 0xbf))
-
-    f:write(string.format("%s = __TObject.new(tcligs.%sIface, {__type= \"%s\"})\n", serviceName, s.name, serviceName))
-    f:write("\n")
-
-    for _, m in ipairs(s.member) do
-        if m.desc and m.desc ~= "" then
-            f:write(string.format("--@[[%s]]\n", lib.Trim(m.desc)))
-        end
-        if #m.args > 0 then
-            f:write("--@[[")
-            for _, a in ipairs(m.args) do
-                f:write(string.format("%s %s, ", a.type, a.id))
-            end
-            f:seek("cur", -2)
-            f:write("]]\n")
-        end
-
-        f:write(string.format("function %s:%s(", serviceName, m.id))
-        if #m.args > 0 then
-            for _, a in ipairs(m.args) do
-                f:write(string.format("%s, ",a.id))
-            end
-            f:seek("cur", -2)
-        end
-        f:write(")\n")
-        f:write("    --TODO:\n")
-        f:write("end\n")
-        f:write("\n")
-    end
-
-    f:write(string.format("return %s\n", serviceName))
-    f:close()
-end
-
-local function parseSourceFile(fd, file)
-    
-end
-
-local function mergeService(service, prev, name, fd, file)
-    print("444444444444444444")
-    return true
-end
-
 local function exportServiceToLua(servicesList, path)
     for _, s in pairs(servicesList) do
         if lib.EndWith(s.name, "S2C") then
@@ -992,7 +929,7 @@ local function parseThrift(srcThrift, destJson, csFile)
     end
 
     local g = {
-        type = setmetatable({}, {__index = kBuiltinTypes}),
+        type = setmetatable({}, {__index = def.kBuiltinTypes}),
         exp = {const = {}, enum = {}, tip = {}, struct = {}, service = {}}
     }
     g.env = newEnv(g, lib.GetFileName(srcThrift))
@@ -1001,7 +938,7 @@ local function parseThrift(srcThrift, destJson, csFile)
     -- 导出Lua转换代码
     exportStructLuaConv(g, "22" .. csFile)
     exportStructToLua(g, csFile)
-    exportServiceToLua(g.exp.service, "lua")
+    --exportServiceToLua(g.exp.service, "lua")
 
     local etc ={}
     local str = json:encode({const=g.exp.const, enum=g.exp.enum, tip=g.exp.tip},
