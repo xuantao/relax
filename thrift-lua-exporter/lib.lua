@@ -74,13 +74,13 @@ function lib.EndWith(str, s)
 end
 
 function lib.TrimLeft(str, pat)
-    pat = pat or " \t\r\t"
+    pat = pat or " \t\r\n"
     local b, l = string.find(str, string.format("^[%s]*", pat))
     return string.sub(str, b + l)
 end
 
 function lib.Trim(str, pat)
-    pat = pat or " \t\r\t"
+    pat = pat or " \t\r\n"
     local b, l = string.find(str, string.format("^[%s]*", pat))
     local e, l2 = string.find(str, string.format("[%s]*$", pat))
     return string.sub(str, b + l, e - 1)

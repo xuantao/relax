@@ -280,7 +280,7 @@ local function parse(cursor)
 end
 
 local test_args = {
-    "-std=c++14",
+    "-std=c++11",
     --"-ast-dump"
     "-DCLANG_PARSER",
     "-Xclang",
