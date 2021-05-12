@@ -574,11 +574,12 @@ end
 
 local function makeSentance()
     return {
-        state = SentanceState.kSpecifierSeq,
-        specifier = {info = nil, qualifiers = {}},
-        --declarator = {info = nil,  qualifiers = {}},
-        _specifier,
-        _declarator,
+        --state = SentanceState.kSpecifierSeq,
+        --specifier = {info = nil, qualifiers = {}},
+        attr = {},
+        declarator = {qualifier = {}},
+        specifier,
+        --declarator,
         qualifier = {},
     }
 end
@@ -764,27 +765,16 @@ function parserMeta:doParse()
             elseif value == "using" then
                 --TODO:
             elseif value == "typename" then
-                local com = self:tryCombine()
-                if not com or self.sentance.specifier then
-                    self:error()
-                end
-                self:appendDeclSeq(com)
+                self:setSpecifier(self:tryCombine())
             elseif value == "decltype" then
-                local com = self:trycombine(token)
-                if not com or self.sentance.specifier then
-                    self:error()
-                end
-                self:appendDeclSeq(token)
+                self:setSpecifier(self:tryCombine(token))
             elseif value == "operator" then
                 local com = self:tryCombine(token)
                 self:appendDeclSeq(com)
             elseif value == "auto" then
-                self:appendDeclSeq({kind = CombinedKind.kRefer, value = value, range = token.range})
+                self:setSpecifier({kind = CombinedKind.kRefer, value = value, range = token.range})
             elseif value == "void" then
-                if self.sentance.specifier then
-                    self:error()
-                end
-                self:appendDeclSeq({kind = CombinedKind.kRaw, value = value, range = token.range})
+                self:setSpecifier({kind = CombinedKind.kRaw, value = value, range = token.range})
             elseif value == "namespace" then
                 self:processNamespace()
             elseif value == "struct" or value == "class" then
@@ -792,7 +782,7 @@ function parserMeta:doParse()
             elseif value == "enum" then
                 self:processEnum()
             elseif value == "virtual" then
-                self.domain.temporary.isVirtual = true
+                self.sentance.attr.isVirtual = true
             elseif value == "inline" or value == "override" or value == "final" then
                 -- ignore
             elseif value == "friend" or value == "template" or value == "static_assert" then
@@ -808,7 +798,7 @@ function parserMeta:doParse()
                 self:error("")
             end
         elseif token.type == TokenType.kSymbol then
-            if token.value == '{' then  -- jump out unamed scope
+            if value == '{' then  -- jump out unamed scope
                 local domain = self.domain
                 if (domain.type == DomainType.kGlobal or domain.type == DomainType.kClass) and 
                     domain.temporary.type and domain.temporary.identify then
@@ -825,25 +815,27 @@ function parserMeta:doParse()
                         self:addFunction(domain)
                     end
                 end
-            elseif token.value == '}' then
+            elseif value == '}' then
                 self:closeBrace()
-            elseif token.value == '#' then
+            elseif value == '#' then
                 self:preProcess()
-            elseif token.value == "::" then
+            elseif value == ':' then
+                self:parseBitField()
+            elseif value == "::" then
                 self:appendDeclSeq(self:tryCombine(token))
-            elseif token.value == ',' then
+            elseif value == ',' then
                 self:meetComma()
-            elseif token.value == ";" then
+            elseif value == ";" then
                 self:meetSemicolon()
-            elseif token.value == '(' then
+            elseif value == '(' then
                 self:openBracket()
-            elseif token.value == ')' then
+            elseif value == ')' then
                 self:closeBracket()
-            elseif token.value == '=' then
+            elseif value == '=' then
                 self:processAssign()
-            elseif token.value == '[' then
+            elseif value == '[' then
                 self:processArray()
-            elseif token.value == "[[" then
+            elseif value == "[[" then
                 if not self.lexer:JumpCtrl("]]") then
                     self:error("can not process attribute")
                 end
@@ -1492,11 +1484,31 @@ function parserMeta:setDeclSeq(seq)
     end
 end
 
+local function makeType(seq, qualifer)
+    if not seq then
+        return
+    end
+
+    local type = {name = seq.value, qualifer = qualifer}
+    if seq.kind == CombinedKind.kRaw then
+        type.kine = TypeKind.kRaw
+    elseif seq.kind == CombinedKind.kIdentify or seq.kind == CombinedKind.kRefer then
+        type.kind = TypeKind.kRefer
+    else
+        self:error("")
+    end
+    return type
+end
+
 function parserMeta:appendQualifier(token)
     local s = self.sentance
-    table.insert(s.qualifier, token.value)
-    if not s.speqPos and (token.value == '*' or token.value == '&' or token.value == "&&") then
-        self.speqPos = #s.qualifier
+    if s.declarator then
+        table.inset(s.declarator.type.qualifier, token.value)
+    elseif token.value == '*' or token.value == '&' or token.value == "&&" then
+        self:buildDeclarator()
+        table.inset(s.declarator.type.qualifier, token.value)
+    else
+        table.insert(s.qualifier, token.value)
     end
 end
 
@@ -1509,34 +1521,62 @@ function parserMeta:setSpecifier(com)
     end
 end
 
+function parserMeta:buildDeclarator()
+    if self.sentance.declarator then
+        self:error()
+    end
+    s.declarator = {type = makeType(s.specifier, s.qualifer)}
+end
+
+function parserMeta:setDeclaretor(com)
+
+end
+
 function parserMeta:appendDeclSeq(combine)
     -- sepcifier or declarator?
     local s = self.sentance
     local kind = combine.kind
     if kind == CombinedKind.kMemberPtr then
+        if not s.declarator then
+            self:buildDeclarator()
+        end
         if s.declarator.seq then
             self:error("")
         end
 
-        s.declarator.class = combine
+        s.type = {kind = TypeKind.kMemberPtr, ret = s.type, class = combine.value}
     elseif kind == CombinedKind.kOperatorLiteral or
         kind == CombinedKind.kOperatorSymbol or
         kind == CombinedKind.kOperatorLiteral then
+        if not s.declarator then
+            self:buildDeclarator()
+        end
         if s.declarator.seq then
             self:error("")
         end
 
         s.declarator.seq = combine
-    elseif not s.declarator.seq and not s.specifier then
+    elseif not s.declarator and not s.specifier then
         s.specifier = combine
+    elseif not s.declarator then
+        self:buildDeclarator()
+        s.declarator.seq = combine
     elseif not s.declarator.seq then
         s.declarator.seq = combine
     else
         self:error("")
     end
+end
 
-    if s.declarator.seq then
-        self:parseDecl()
+function parserMeta:parseDeclarator()
+    local token = self:getToken(true)
+    local value = token.value
+    if value == ':' then
+    elseif value == '(' then
+    elseif value == '=' then
+    elseif value == '{' then
+    elseif value == ',' then
+    elseif value == ';' then
     end
 end
 
@@ -1586,30 +1626,25 @@ end
 
 -- 逗号
 function parserMeta:meetComma()
+    local s = self.sentance
     self:produce()
-    if self.block.kind == BlockKind.kBracket then
-        self.sentance.declarator = {}
-        -- 清除变量修饰符
-        local len = #self.sentance.qualifier
-        local idx = len + 1
-        for i, v in ipairs(self.sentance.qualifier) do
-            if v == '*' or v == '&' or '&&' then
-                idx = i
-                break
+    self.sentance = makeSentance()
+    if self.block.kind == BlockKind.kBracket then   -- 一次声明多个变量
+        self.sentance.specifier = s.specifier
+        if s.speqPos then
+            for i = 1, s.speqPos - 1 do
+                table.insert(self.sentance.qualifier, s.qualifier[i])
             end
+        else
+            self.sentance.qualifier = s.qualifier
         end
-
-        for i = len, idx, -1 do
-            table.remove(self.sentance.qualifier, i)
-        end
-    else
-        self.sentance = makeSentance()
     end
 end
 
 -- 遇到分号
 function parserMeta:meetSemicolon()
-    self:resetMark()
+    self:produce()
+    self.sentance = makeSentance()
 end
 
 -- 关闭花括号
@@ -1897,6 +1932,10 @@ function parserMeta:tryParseDecl2(decl)
     return true
 end
 
+function parserMeta:isConstructImpl(s)
+    return false
+end
+
 -- 打开圆括号
 function parserMeta:openBracket()
     local sen = self.sentance
@@ -1904,14 +1943,17 @@ function parserMeta:openBracket()
         self:error("unknown \"()\"")
     end
 
-    if not sen.declarator then
-        if isConstructImpl(sen.specifier.seq.value) then
+    if not sen.declarator or not sen.declarator.seq then
+        if self:isConstructImpl(sen.specifier.seq.value) then
             --TODO: skip 构造函数实现
         else
             --try
             local cursor = self.lexer.cursor
-            local decl = {typeQualifier ={}, qualifier = {}}
+            local decl = {typeQualifier = {}, qualifier = {}}
             if self:tryParseDecl2(decl) then
+                local s = self.sentance
+                self:buildDeclarator()
+
                 --TODO:
             else
                 self.lexer:SetCursor(cursor)
@@ -1920,7 +1962,7 @@ function parserMeta:openBracket()
         end
     end
 
-
+--[[
     local block = self:pushBlock(self.domain, 1, ')')
     self:doParse()
     self:popBlock()
@@ -1932,7 +1974,7 @@ function parserMeta:openBracket()
     else
         
     end
-
+]]
 --[=[
     local domain = self.domain
     local type = domain.temporary.type
@@ -2261,6 +2303,20 @@ end
 -- 当前语句产生的对象类型
 function parserMeta:produce()
     local s = self.sentance
+
+    if s.isUsing then
+
+    elseif s.isTypedefing then
+    end
+
+    local decl = s.declarator
+    if not decl and not s.specifier then
+        return -- empty
+    end
+    
+    if not s.declarator then
+        
+    end
     if s.specifier then
     elseif s.declarator then
     elseif s.constant then
