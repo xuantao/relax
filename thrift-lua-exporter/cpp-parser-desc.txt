@@ -1,0 +1,109 @@
+-- cpp parser work
+local BracketType = {
+    kAttr = 1,      -- [[attr]]
+    kRound = 2,     -- (...)
+    kSquare = 3,    -- [...]
+    kAngle = 4,     -- <...>
+    kBrace = 5,     -- {...}
+}
+
+category
+
+1. 全局变量构造、初始化等
+2. 函数参数解析、函数调用识别
+3. 类型、变量数据结构完善
+4. 是否需要识别宏？
+5. 预处理指令
+6. 捕获一行数据（单行注释、宏换行连接符）
+7. 特化模板类
+
+except {
+    1. 用编译宏引入的括号不匹配
+}
+
+基础结构 {
+    category,       -- 类别(unit, namesapce, class, enum, variate, function, preCompile)
+    id,             -- 如果是匿名，则根据一定规则生成唯一名称
+    isAnonymous,    -- 是否匿名
+    tags,           -- 标记
+    attrs,          -- 编译属性
+    domain,         -- 所属域
+    location,
+    macroSwitch,    -- 宏开关
+}
+
+变量结构 : 基础结构 {
+    type,
+    id,
+    --array,
+    initial,    -- 初始值
+}
+
+class结构 : 基础结构 {
+    isStruct,
+    inherits,   -- 继承
+    children,   -- 子集
+}
+
+function结构 : 基础结构 {
+    ret,
+    args,
+    // 可选标记
+    isAbstract,
+    isVirtual,
+    isFinal,
+    isConst,
+    isConstExpr,
+    isNoExcept,
+}
+
+overload : 基础结构 {
+    list,   -- 重载列表
+}
+
+location {
+    file,
+    line,
+    column,
+    pos,
+}
+
+TypeKind = {
+    kRaw,       -- 原生类型
+    kDefine,    -- 自定义类型
+    kAlias,     -- using, typedef引用的别名
+    kMemberPtr, -- 成员指针{ret, scope}
+    kFunction,  -- 函数类型(普通函数、成员函数)
+}
+
+type {
+    kind,           -- 类型
+    id,             -- id
+    qualifier,      -- 限定符
+    class,          -- 引用类成员
+    ret,            -- 返回类型
+    paramenters,    -- 参数列表
+    array,          -- 数组
+}
+
+lexer结构 {
+    file,
+    soruce,
+    cursor,
+}
+
+sentence {
+    specifier,  -- 说明符
+    defType,
+    declarator, -- 声明、定义
+    constant,   -- 值
+}
+
+
+decl = {
+    id,
+    qualifier,
+    location,
+    paramenters,    -- 表示是函数
+    memberRef,      -- 表示是成员指针
+}
