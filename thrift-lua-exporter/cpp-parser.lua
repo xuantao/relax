@@ -153,12 +153,6 @@ local SkipType = {
     kBrace = 5,     -- {...}
 }
 
-local TypeKind = {
-    kRaw = 1,       -- 原生
-    kRef = 2,       -- 引用
-    kAnonymous = 3, -- 匿名
-}
-
 local c_round_bracket = buildSkipPatt('(', ')')
 local c_angle_bracket = P{
     Ct(V"exp") / table.concat,
@@ -198,7 +192,7 @@ local c_token = P{
     keywords = C((
         P"class" + "struct" + "enum" + "template" + "virtual" +
         "typename" + "decltype" + "final" + "const" + "constexpr" + "volatile" + "mutable" +
-        "namespace" + "auto" + "operator" + "sizeof"
+        "namespace" + "auto" + "operator" + "sizeof" + "typedef"
         ) * -p_rest) / buildToken(TokenType.kKeyword),
     symbols = C(P"..." + "&&" + "||" + "->" + "+=" + "-=" + "|=" + "&=" + "/=" + "*=" + "==" + ">=" + "<="
         + "::" + "<<" + ">>" + ':' + '#'
@@ -521,12 +515,6 @@ local OperatorKind = {
     kNewDelete = 4,     -- new/delete 操作
 }
 
--- 代码块类型，表示当前处理的token所在范围
-local BlockKind = {
-    kBracket = 1,   -- 圆括号
-    kBrace = 2,     -- 花括号
-}
-
 local function toAccessType(name)
     if name == "public" then return AccessType.kPublic
     elseif name == "proctected" then return AccessType.kProcteced
@@ -584,13 +572,11 @@ end
 
 local function makeSentance()
     return {
-        --state = SentanceState.kSpecifierSeq,
-        --specifier = {info = nil, qualifiers = {}},
-        attr = {},
-        declarator = {qualifier = {}},
         specifier,
-        --declarator,
         qualifier = {},
+        isDecl = false,
+        declarator = {type = {qualifier = {}}, attr = {}, --[[type, seq]]},
+        attr = {},
     }
 end
 
@@ -598,11 +584,7 @@ local function makeBlock(domain, closeSymbol)
     return {
         domain = domain, 
         closeSymbol = closeSymbol,
-        sentance = {
-            state = SentanceState.kSpecifierSeq,
-            specifierSeq = {id ="", tokens = {}},
-            declarator = {id = "", tokens = {}, qualifiers = {}},
-        }
+        sentance = makeSentance(),
     }
 end
 
@@ -637,7 +619,7 @@ function CreateParser(cfg)
             mark = createMark(),    -- 局部解析标记
             domain = createDomain("", DomainType.kGlobal, AccessType.kPublic),
             sentance = makeSentance(),
-            block = {kind = 1, closeSymbol = ""},
+            block = {kind = 1, closeSymbol = "", objs = {}},
             stack = {},
         }, {
             __index = parserMeta
@@ -652,13 +634,14 @@ end
 
 function parserMeta:ParseSource(source)
     self.lexer = CreateLexer(source)
-    --self:doParse()
+    self:doParse()
+    --lib.Log(self.block.objs)
+    --[[
     self.sentance = makeSentance()
-    --self.sentance.specifier = {}
-    local decl = {typeQualifier = {}, qualifier = {}}
-    local ok = self:tryParseDeclImpl(decl)
+    local ok = self:tryParseDeclImpl()
     print(source)
     lib.Log(ok)
+    ]]
 end
 
 function parserMeta:setSource(source)
@@ -742,12 +725,18 @@ function parserMeta:processTag(token)
 end
 
 function parserMeta:preProcess()
-
 end
 
 function parserMeta:error(desc)
+    lib.Log(self.sentance)
     print("at:" .. string.sub(self.lexer.source, self.lexer.cursor, self.lexer.cursor + 20))
     error(desc)
+end
+
+function parserMeta:warning(desc)
+    lib.Log(self.sentance)
+    print("at:" .. string.sub(self.lexer.source, self.lexer.cursor, self.lexer.cursor + 20))
+    print(debug.traceback())
 end
 
 function parserMeta:doParse()
@@ -759,6 +748,7 @@ function parserMeta:doParse()
             end
             break
         elseif token.value == self.block.closeSymbol then
+            print("1 bbbbbbbbbbbbbbbbbbbb")
             break
         end
 
@@ -766,14 +756,16 @@ function parserMeta:doParse()
         if token.type == TokenType.kKeyword then
             if value == "public" or value == "proctected" or value == "private" then
                 if self.domain.type ~= DomainType.kClass then
-                    self:error("only class/struct accept it")
+                    self:error("only class/struct accept the keyword " .. value)
                 end
                 self:expect(':')
                 self.domain.access = toAccessType(value)
             elseif value == "const" or value == "volatile" or value == "mutable" then
                 self:appendQualifier(token)
             elseif value == "using" then
-                --TODO:
+                self:parseUsing()
+            elseif value == "typedef" then
+                self.sentance.isTypedefing = true
             elseif value == "typename" then
                 self:setSpecifier(self:tryCombine())
             elseif value == "decltype" then
@@ -809,22 +801,7 @@ function parserMeta:doParse()
             end
         elseif token.type == TokenType.kSymbol then
             if value == '{' then  -- jump out unamed scope
-                local domain = self.domain
-                if (domain.type == DomainType.kGlobal or domain.type == DomainType.kClass) and 
-                    domain.temporary.type and domain.temporary.identify then
-                    self:rollback(token)
-                    self:processAssign()    -- 变量赋初始值
-                else
-                    if domain.type == DomainType.kGlobal or domain.type == DomainType.kFunction then
-                        if not self.lexer:JumpCtrl('}') then
-                            error("")
-                        end
-                    end
-                    if domain.type == DomainType.kFunction then
-                        self:popDomain()
-                        self:addFunction(domain)
-                    end
-                end
+                self:openBrace()
             elseif value == '}' then
                 self:closeBrace()
             elseif value == '#' then
@@ -842,9 +819,9 @@ function parserMeta:doParse()
             elseif value == ')' then
                 self:closeBracket()
             elseif value == '=' then
-                self:processAssign()
+                self:parseAssign()
             elseif value == '[' then
-                self:processArray()
+                self:parseArray()
             elseif value == "[[" then
                 if not self.lexer:JumpCtrl("]]") then
                     self:error("can not process attribute")
@@ -857,7 +834,8 @@ function parserMeta:doParse()
             elseif value == '&&' or value == '&' or value == '*' then
                 self:appendQualifier(token)
             else
-                error("");
+                lib.Log(token)
+                self:error("");
             end
         elseif token.type == TokenType.kIdentifier then
             self:appendDeclSeq(self:tryCombine(token))
@@ -868,7 +846,7 @@ function parserMeta:doParse()
 end
 
 function parserMeta:safeParse()
-    self:doParse()
+    return pcall(self.doParse, self)
 end
 
 function parserMeta:getDomain(name)
@@ -909,7 +887,7 @@ function parserMeta:popDomain()
     self.domain = self.domain.parent
 end
 
-function parserMeta:pushBlock(domain, kind, closeSymbol)
+function parserMeta:pushBlock(domain, closeSymbol)
     local backup = {
         domain = self.domain,
         sentance = self.sentance,
@@ -919,7 +897,7 @@ function parserMeta:pushBlock(domain, kind, closeSymbol)
     table.insert(self.stack, backup)
     self.domain = domain
     self.sentance = makeSentance()
-    self.block = {kind = kind, closeSymbol = closeSymbol, objs = {}}
+    self.block = {closeSymbol = closeSymbol, objs = {}}
     return self.block
 end
 
@@ -927,7 +905,7 @@ function parserMeta:popBlock()
     local pos = #self.stack
     local backup = self.stack[pos]
     table.remove(self.stack, pos)
-
+    print("parserMeta:popBlock", pos)
     self.domain = backup.domain
     self.sentance = backup.sentance
     self.block = backup.block
@@ -1339,6 +1317,10 @@ function parserMeta:combinedQualifier()
     return list
 end
 
+function parserMeta:parseUsing()
+    --TODO:
+end
+
 function parserMeta:processNamespace()
     local token = self:getToken()
     local id = token.value
@@ -1353,7 +1335,7 @@ function parserMeta:processNamespace()
     end
 
     local domain = self:getDomain(id) or self:newDomain(id, DomainType.kNamespace)
-    local block = self:pushBlock(domain, 1, '}')
+    local block = self:pushBlock(domain, '}')
     self:doParse()
     self:popBlock()
 end
@@ -1463,7 +1445,7 @@ function parserMeta:processClass(isStruct)
     end
 
     local cls = self:newDomain(combined and combined.name or '', DomainType.kClass, AccessType.kPublic)
-    local block = self:pushBlock(cls, 1, '}')
+    local block = self:pushBlock(cls, '}')
     self:popBlock()
 end
 
@@ -1497,12 +1479,12 @@ function parserMeta:setDeclSeq(seq)
     end
 end
 
-local function makeType(seq, qualifer)
+local function makeType(seq, qualifier)
     if not seq then
         return
     end
 
-    local type = {name = seq.value, qualifer = qualifer}
+    local type = {name = seq.value, qualifier = qualifier}
     if seq.kind == CombinedKind.kRaw then
         type.kine = TypeKind.kRaw
     elseif seq.kind == CombinedKind.kIdentify or seq.kind == CombinedKind.kRefer then
@@ -1515,142 +1497,93 @@ end
 
 function parserMeta:appendQualifier(token)
     local s = self.sentance
-    if s.declarator then
-        table.inset(s.declarator.type.qualifier, token.value)
-    elseif token.value == '*' or token.value == '&' or token.value == "&&" then
-        self:buildDeclarator()
-        table.inset(s.declarator.type.qualifier, token.value)
-    else
+    if token.value == '*' or token.value == '&' or token.value == "&&" then
+        s.isDecl = true
+    end
+
+    table.insert(s.declarator.type.qualifier, token.value)
+    if not s.isDecl then
         table.insert(s.qualifier, token.value)
     end
 end
 
 function parserMeta:setSpecifier(com)
     local s = self.sentance
-    if s.speqPos or s.declarator.seq or s.specifier then
-        self:error("not allow com")
-    else
+    if not s.isDecl and not s.specifier then
         s.specifier = com
-    end
-end
-
-function parserMeta:buildDeclarator()
-    if self.sentance.declarator then
-        self:error()
-    end
-    s.declarator = {type = makeType(s.specifier, s.qualifer)}
-end
-
-function parserMeta:setDeclaretor(com)
-
-end
-
-function parserMeta:appendDeclSeq(combine)
-    -- sepcifier or declarator?
-    local s = self.sentance
-    local kind = combine.kind
-    if kind == CombinedKind.kMemberPtr then
-        if not s.declarator then
-            self:buildDeclarator()
+        s.declarator.type.name = com.value
+        if com.kind == CombinedKind.kRaw then
+            s.declarator.type.kind = TypeKind.kRaw
+        else
+            s.declarator.type.kind = TypeKind.kRefer
         end
-        if s.declarator.seq then
-            self:error("")
-        end
-
-        s.type = {kind = TypeKind.kMemberPtr, ret = s.type, class = combine.value}
-    elseif kind == CombinedKind.kOperatorLiteral or
-        kind == CombinedKind.kOperatorSymbol or
-        kind == CombinedKind.kOperatorLiteral then
-        if not s.declarator then
-            self:buildDeclarator()
-        end
-        if s.declarator.seq then
-            self:error("")
-        end
-
-        s.declarator.seq = combine
-    elseif not s.declarator and not s.specifier then
-        s.specifier = combine
-    elseif not s.declarator then
-        self:buildDeclarator()
-        s.declarator.seq = combine
-    elseif not s.declarator.seq then
-        s.declarator.seq = combine
     else
+        self:error(string.format("current sentence not allow set specifier with \"\"", com.value))
+    end
+end
+
+function parserMeta:appendDeclSeq(com)
+    local s = self.sentance
+    local kind = com.kind
+    if kind == CombinedKind.kMemberPtr then
+        s.isDecl = true
+        s.declarator.type = {
+            kind = TypeKind.kMemberPtr,
+            ret = s.type,
+            class = com.value,
+            qualifier = {},
+        }
+    elseif kind == CombinedKind.kOperator then
+        s.isDecl = true
+        s.declarator.seq = com
+    elseif not s.isDecl and not s.specifier then
+        self:setSpecifier(com)
+    elseif not s.declarator.seq then
+        s.isDecl = true
+        s.declarator.seq = com
+    else
+        lib.Log(com)
+        lib.Log(s)
         self:error("")
     end
 end
 
-function parserMeta:parseDeclarator()
+function parserMeta:parseBitField()
+    local decl = self.declarator
+    if self.domain.kind ~= ObjectType.kClass or not decl.seq then
+        self:error("unexpect code \":\"")
+    end
+
     local token = self:getToken(true)
-    local value = token.value
-    if value == ':' then
-    elseif value == '(' then
-    elseif value == '=' then
-    elseif value == '{' then
-    elseif value == ',' then
-    elseif value == ';' then
-    end
-end
-
-function parserMeta:pushCombine(combine)
-    if not combine then
-        self:error()
-    end
-
-    local sen = self.sentance
-    if combine.isMemberPtr then
-        if sen.var then
-            self:error("")
-        end
-
-        sen.var = {qualifier = {}, classRef = combine}
+    if token.type == TokenType.kConst then
+        decl.bitFeild = {kind = CombinedKind.kConst, value = token.value, range = token.range}
+    elseif token.type == TokenType.kIdentifier or token.value == '::' then
+        decl.bitFeild = self:tryCombine(token)
     else
-        if not sen.var then
-            if not sen.type then
-                sen.type = {qualifier = {}}
-            end
-
-            if not sen.type.id then
-                sen.type.id = combine
-            else
-                sen.var = {qualifier = {}, id = combine}
-            end
-        else
-            sen.var.id = combine
-        end
-    end
-end
-
-function parserMeta:setDeclaretorState()
-    local sen = self.block.sentance
-    sen.state = SentanceState.kDeclcrator
-end
-
-function parserMeta:closeTemperory()
-    local temporary = self.domain.temporary
-    if temporary.type and temporary.identify then
-        self:processVariate()
-    elseif temporary.type then
-        --TODO: 这里是否需要校验错误
-        --self:error("")
+        self:error("unexpect code \":\"")
     end
 end
 
 -- 逗号
 function parserMeta:meetComma()
-    local s = self.sentance
     self:produce()
-    self.sentance = makeSentance()
-    if self.block.kind == BlockKind.kBracket then   -- 一次声明多个变量
-        self.sentance.specifier = s.specifier
-        if s.speqPos then
-            for i = 1, s.speqPos - 1 do
-                table.insert(self.sentance.qualifier, s.qualifier[i])
+    if not self.block.isArgsBlock then   -- 参数列表声明中
+        local s = self.sentance
+        s.declarator = {
+            type = {qualifier = lib.ShallowCopy(s.qualifier),},
+            attr = {},
+        }
+
+        if s.specifier then
+            s.declarator.type.name = s.specifier.value
+            if s.specifier.kind == CombinedKind.kRaw then
+                s.declarator.type.kind = TypeKind.kRaw
+            else
+                s.declarator.type.kind = TypeKind.kRefer
             end
-        else
-            self.sentance.qualifier = s.qualifier
         end
+    else
+        self.sentance = makeSentance()
     end
 end
 
@@ -1658,6 +1591,26 @@ end
 function parserMeta:meetSemicolon()
     self:produce()
     self.sentance = makeSentance()
+end
+
+-- 开启花括号
+function parserMeta:openBrace()
+    local domain = self.domain
+    if (domain.type == DomainType.kGlobal or domain.type == DomainType.kClass) and 
+        domain.temporary.type and domain.temporary.identify then
+        self:rollback(token)
+        self:parseAssign()    -- 变量赋初始值
+    else
+        if domain.type == DomainType.kGlobal or domain.type == DomainType.kFunction then
+            if not self.lexer:JumpCtrl('}') then
+                error("")
+            end
+        end
+        if domain.type == DomainType.kFunction then
+            self:popDomain()
+            self:addFunction(domain)
+        end
+    end
 end
 
 -- 关闭花括号
@@ -1721,40 +1674,24 @@ function parserMeta:tryParseQualifier(q)
     return q
 end
 
-function parserMeta:tryParseDeclAruments()
-    
-    --if not token or token.value ~= '(' then
-    --    return
-    --end
-    --print(debug.traceback())
-
-    local token = self:getToken(true)
-    while token.value ~= ')' do
-        print("111111111", token.value)
-        token = self:getToken(true)
-    end
-    --self:rollback(token)
-    print(string.sub(self.lexer.source, self.lexer.cursor))
-    return {}
-
-
-    --[[
-    token = self:getToken()
-    if not token then
-        return
-    end
-
-    if token.value ~= '(' then
-        self:rollback(token)
-        return
-    end
-
-    local block = self:pushBlock(self.domain, 1, ')')
-    self:doParse()
+function parserMeta:tryParseArgs(isDecl)
+    local cursor = self.lexer.cursor
+    print("parserMeta:tryParseArgs", string.sub(self.lexer.source, cursor))
+    local block = self:pushBlock(self.domain, ')')
+    block.isArgsBlock = true
+    block.isDecling = isDecl
+    local ok, err = self:safeParse()
     self:popBlock()
+    if not ok then
+        print("parse args error", err)
+        self.lexer:SetCursor(cursor)
+        return
+    end
+
     --TODO: 解析参数, 检查参数列表
+    lib.Log(block.objs)
+    print("parserMeta:tryParseArgs end")
     return block.objs, {}
-    ]]
 end
 
 -- 检查是否有效声明ID，用来区分(S)是否函数声明
@@ -1766,6 +1703,8 @@ end
     括号可能是函数、变量声明
 ]]
 function parserMeta:tryParseDeclImpl()
+    print("parserMeta:tryParseDeclImpl begin")
+
     local cursor = self.lexer.cursor
     local qualifier = {}
     local decl
@@ -1778,19 +1717,19 @@ function parserMeta:tryParseDeclImpl()
             range = token.range,
             type = {
                 kind = TypeKind.kFunction,
-                qualifer = {},
+                qualifier = {},
                 ret = {qualifier = {}},
                 args = {}
             }
         }
         modifier = decl.type.ret
         self:rollback(token)
-    elseif token.value == '*' or token.vlaue == '&' or token.value == '&&' then
+    elseif token.value == '*' or token.value == '&' or token.value == '&&' then
         table.insert(qualifier, token.value)
         --print("22222222222 xxxxxxxxxxxxx")
         self:tryParseQualifier(qualifier)
-        --print("11111111111 xxxxxxxxxxxxx")
-        --lib.Log(qualifier)
+        print("11111111111 xxxxxxxxxxxxx")
+        lib.Log(qualifier)
         local next = self:getToken(true)
         if next.value == '(' then
             decl, modifier = self:tryParseDeclImpl(decl)
@@ -1816,7 +1755,7 @@ function parserMeta:tryParseDeclImpl()
             self:error("")
             return
         end
-    elseif value == "::" or token.type == TokenType.kIdentifier then
+    elseif token.value == "::" or token.type == TokenType.kIdentifier then
         local combine = self:tryCombine(token)
         if not combine.isMemberPtr and not self:isValidDeclID(combine.value) then
             self:error("")
@@ -1839,10 +1778,6 @@ function parserMeta:tryParseDeclImpl()
                 modifier.kind = TypeKind.kMemberPtr
                 modifier.class = combine.value
                 modifier.ret = {qualifier = {}}
-                --mergeQualifier(modifier.qualifer, qualifier)
-                --qualifier = {}
-                --modifier = modifier.ret
-
             else
                 decl = {
                     type = {
@@ -1871,6 +1806,7 @@ function parserMeta:tryParseDeclImpl()
             modifier = decl.type
         end
     else
+        print("xxxxxxxccccccccccccccc 1",  "-" .. token.value..'-')
         return
     end
 
@@ -1878,7 +1814,7 @@ function parserMeta:tryParseDeclImpl()
     if next.value == '(' then
         print(string.sub(self.lexer.source, self.lexer.cursor))
         if not modifier.args then
-            modifier.args = self:tryParseDeclAruments()
+            modifier.args = self:tryParseArgs()
         else
             self:error("")
         end
@@ -1912,11 +1848,14 @@ function parserMeta:tryParseDeclImpl()
     --lib.Log(qualifier)
     --print(decl.paramenters, decl.memberRef)
 
+    print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
+
     if not modifier.args then
         next = self:getToken()
         if next then
             if next.value == '(' then
-                modifier.args = self:tryParseDeclAruments()
+                print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
+                modifier.args = self:tryParseArgs()
                 if modifier.kind == TypeKind.kMemberPtr then
                     modifier.kind = TypeKind.kMemberFuncPtr
                 else
@@ -1939,24 +1878,21 @@ function parserMeta:tryParseDecl()
     local cursor = self.lexer.cursor
     local decl, modifier = self:tryParseDeclImpl()
     if not decl then
+        print("111111111 unknown xxxxxxxx")
         self.lexer:SetCursor(cursor)
         return
     end
 
     local s = self.sentance
-    if not s.declarator then
-        self:buildDeclarator()
-    end
-
-    -- 复制类型
     local type = s.declarator.type
-    mergeQualifier(modifier.qualifer, type.modifier)
+    mergeQualifier(type.qualifier, modifier.qualifier)
     lib.ShallowCopy(type, modifier)
 
     -- 设置语句
     s.declarator.kind = ObjectType.kVariate
     s.declarator.type = decl.type
     s.declarator.seq = decl.seq
+    lib.Log(s.declarator)
     return true
 end
 
@@ -1988,6 +1924,7 @@ end
 
 -- 打开圆括号
 function parserMeta:openBracket()
+    print("parserMeta:openBracket", string.sub(self.lexer.source, self.lexer.cursor))
     local s = self.sentance
     if not s.specifier and not s.declarator.seq then
         if not self.lexer:JumpCtrl(')') then
@@ -2006,7 +1943,7 @@ function parserMeta:openBracket()
         if self:isMemberFunctionImpl(seq) then
             -- 跳过函数实现
         else
-            local args = self:tryParseDeclAruments()
+            local args = self:tryParseArgs()
             if args then
                 s.declarator.kind = ObjectType.kFunction
                 s.declarator.args = args
@@ -2021,7 +1958,7 @@ function parserMeta:openBracket()
         local seq = s.specifier
         if self.domain.kind == ObjectType.kClass and self.domain.name == seq.value then
             s.declarator.attr.isConstruct = true
-            local args = self:tryParseDeclAruments()
+            local args = self:tryParseArgs()
             if args then
                 s.declarator.kind = ObjectType.kFunction
                 s.declarator.args = args
@@ -2037,12 +1974,12 @@ function parserMeta:openBracket()
             self:skipBracketBody()
             self:skipFunctionBody()
         elseif not self:tryParseDecl() then
-            if s.isUsing or self.block.kind == BlockKind.kBracket then
+            if s.isUsing or self.block.isArgsBlock then
                 local args = self:tryParseFuncAttr()
                 if args then
 
                 else
-                    
+
                 end
             else
 
@@ -2064,7 +2001,7 @@ function parserMeta:openBracket()
     end
 
 
-    local block = self:pushBlock(self.domain, 1, ')')
+    local block = self:pushBlock(self.domain, ')')
     self:doParse()
     self:popBlock()
 
@@ -2142,6 +2079,8 @@ end
 
 -- 关闭圆括号
 function parserMeta:closeBracket()
+    self:produce()
+    --[[
     local sen = self.sentance
     -- 处理未结束的语句
 
@@ -2172,7 +2111,7 @@ function parserMeta:closeBracket()
             table.insert(self.block.vars, {kind = ObjectType.kVariate})
         end
     end
-
+    ]]
     --[=[
     local domain = self.domain
     local func = domain.func
@@ -2371,57 +2310,81 @@ end
 ]]
 
 -- 不支持对函数声明操作 [= 0, = delete, = default]
-function parserMeta:processAssign()
+function parserMeta:parseAssign()
     local cursor = self.lexer.cursor
     local c = self.lexer:JumpCtrl(',', ';', ')')
     if not c then
-        self:error("expcet some ctrl code")
+        self:error("expect some ctrl code")
     else
         assert(self.lexer.cursor - cursor < 100)
         self.lexer:MoveCursor(-1)
         local assign = string.sub(self.lexer.source, cursor, self.lexer.cursor - 1)
-        self.domain.temporary.assign = lib.Trim(assign)
-        print("assign", self.domain.temporary.assign)
+        self.sentance.declarator.assign = lib.Trim(assign)
+        print("assign", self.sentance.declarator.assign)
     end
 end
 
-function parserMeta:processArray()
+function parserMeta:parseArray()
     local cursor = self.lexer.cursor
     local c = self.lexer:JumpCtrl(']')
     if not c then
         self:error("expect ']'")
     else
+        local type = self.sentance.declarator.type
         local len = string.sub(self.lexer.source, cursor, self.lexer.cursor - 2)
         len = lib.Trim(len)
-        if not self.domain.temporary.array then
-            self.domain.temporary.array = {len}
+        if not type.array then
+            type.array = {len}
         else
-            table.insert(self.domain.temporary.array, len)
+            table.insert(type.array, len)
         end
     end
 end
 
 -- 当前语句产生的对象类型
 function parserMeta:produce()
+    print("parserMeta:produce", string.sub(self.lexer.source, self.lexer.cursor))
     local s = self.sentance
-
-    if s.isUsing then
-
-    elseif s.isTypedefing then
-    end
-
     local decl = s.declarator
-    if not decl and not s.specifier then
-        return -- empty
-    end
-    
-    if not s.declarator then
-        
-    end
-    if s.specifier then
-    elseif s.declarator then
-    elseif s.constant then
+    local block = self.block
+
+    if not decl.seq then
+        if not block.isArgsBlock then
+            print("xxxxxxxxxxxxxxxxxxxxxxxxxx")
+            lib.Log(decl)
+            self:error("declarator need a name")
+        end
+
+        table.insert(block.objs, {
+            kind = ObjectType.kVariate,
+            id = "",
+            loc = self.lexer:Location(),
+            type = decl.type,
+            attr = lib.ShallowCopy(s.attr, decl.attr),
+        })
+    elseif s.isTypedefing then
+        if not decl.seq or decl.seq.kind ~= CombinedKind.kIdentify or decl.seq.value == "" then
+            self:error("typedef need a identify name")
+        end
+        if decl.kind and decl.kind ~= ObjectType.kVariate and decl.kind ~= ObjectType.kFunction then
+            self:error("typedef unexpect syntax")
+        end
+
+        table.insert(block.objs, {
+            kind = ObjectType.kAlias,
+            id = decl.seq.value,
+            loc = self.lexer:Location(decl.seq.range),
+            type = decl.type,
+            attr = lib.ShallowCopy(s.attr, decl.attr),
+        })
     else
+        table.insert(block.objs, {
+            kind = decl.kind or ObjectType.kVariate,
+            id = decl.seq.value,
+            loc = self.lexer:Location(decl.seq.range),
+            type = decl.type,
+            attr = lib.ShallowCopy(s.attr, decl.attr),
+        })
     end
 end
 
@@ -2477,6 +2440,8 @@ local source = [[
 --parser:ParseSource([[(*(foo_6))(void)) ]])
 --parser:ParseSource[[*(*(* const foo_4)(void))) ]]    -- 这里为什么需要一个空格？
 
-parser:ParseSource([[BaseObj::* const ((BaseObj::* const p_4)())) ]])
+--parser:ParseSource([[BaseObj::* const ((BaseObj::* const p_4)())) ]])
 --parser:ParseSource([[BaseObj::* (*p_get_mem_ptr_4)()) ]])
 --parser:ParseSource([[BaseObj::* (*p_get_mem_ptr_5))() ]])
+
+parser:ParseSource [[typedef int int_t, *intp_t, *(&fp)(int, ulong), arr_t[10]; ]]

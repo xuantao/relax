@@ -101,9 +101,11 @@ sentence {
 
 
 decl = {
-    id,
-    qualifier,
-    location,
+    kind,   -- 类型
+    type,   -- 
+    seq,    
+    attr,   -- 属性
+
     paramenters,    -- 表示是函数
     memberRef,      -- 表示是成员指针
 }

@@ -3,7 +3,9 @@ local lib = {}
 
 -- 浅拷贝
 function lib.ShallowCopy(src, dst)
-    if not src then return dst end
+    if not src or src == dst then
+        return dst
+    end
 
     dst = dst or {}
     for k, v in pairs(src) do
