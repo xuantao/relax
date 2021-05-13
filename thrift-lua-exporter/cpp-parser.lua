@@ -477,12 +477,13 @@ local AccessType = {
 
 local ObjectType = {
     kFile = 1,
-    kNamespace = 2,
-    kClass = 3,
-    kEnum = 4,
-    kVariate = 5,
-    kFunction = 6,
-    kOverload = 7,
+    kNamespace = 2,     -- 名字空间
+    kClass = 3,         -- 自定义类型
+    kEnum = 4,          -- 枚举
+    kVariate = 5,       -- 变量
+    kFunction = 6,      -- 函数
+    kOverload = 7,      -- 重载函数
+    kAlias = 8,         -- 引用
 }
 
 local SentanceState = {
@@ -491,13 +492,22 @@ local SentanceState = {
     kSurffix = 3,       -- 后续扩展
 }
 
+local TypeKind = {
+    kRaw = 1,           -- 原生类型
+    kRefer = 2,         -- 引用自定义类型
+    kFunction = 3,      -- 函数
+    kMemberPtr = 4,     -- 成员指针
+    kMemberFuncPtr = 5, -- 成员函数指针
+}
+
 -- 名称组合类型
 local CombinedKind = {
     kRaw = 1,               -- 原生类型(包含void、auto)
     kIdentify = 2,          -- 名字
     kRefer = 3,             -- 引用类型
     kMemberPtr = 4,         -- 成员指针
-    kOperator = 5,          -- 重载
+    kOperator = 5,          -- 重载操作
+
     kOperatorSymbol = 5,    -- 重载操作符
     kOperatorTypeCast = 6,  -- 重载类型转换
     kOperatorLiteral = 7,   -- 重载字面量拼接
@@ -646,9 +656,9 @@ function parserMeta:ParseSource(source)
     self.sentance = makeSentance()
     --self.sentance.specifier = {}
     local decl = {typeQualifier = {}, qualifier = {}}
-    local ok = self:tryParseDecl2(decl)
-    print(source, ok)
-    lib.Log(decl)
+    local ok = self:tryParseDeclImpl(decl)
+    print(source)
+    lib.Log(ok)
 end
 
 function parserMeta:setSource(source)
@@ -925,11 +935,14 @@ end
 
 local function mergeQualifier(l, r)
     --TODO: 合并const、volaite
+    print("merge qualifier")
     if not l then return r end
     if not r then return l end
     for _, v in ipairs(r) do
         table.insert(l, v)
     end
+    print("merge qualifier")
+    lib.Log(l)
     return l
 end
 
@@ -1678,11 +1691,27 @@ function parserMeta:tryParseFuncAttr()
     return {}
 end
 
+function parserMeta:tryParseCV(q)
+    q = q or {}
+    local token = self:getToken()
+    while token and
+        (token.value == "const" or token.value == "mutable" or token.value == "volatile") do
+            print("skip 111", token.value)
+        table.insert(q, token.value)
+        token = self:getToken()
+    end
+    if token then
+        self:rollback(token)
+    end
+    return q
+end
+
 function parserMeta:tryParseQualifier(q)
     local token = self:getToken()
     q = q or {}
+    --print("parserMeta:tryParseQualifier", token.value)
     while token and (token.value == "const" or token.value == "mutable" or token.value == "volatile") do
-        print("222222", token.value)
+        --print("222222", token.value)
         table.insert(q, token.value)
         token = self:getToken()
     end
@@ -1733,148 +1762,46 @@ function parserMeta:isValidDeclID(s)
     return true
 end
 
-function parserMeta:tryParseDecl()
-    local cursor = self.lexer.cursor
-    local token = self:getToken(true)
-    local qualifier = {}
-    local decl, innerQ
-    if token.value == ')' then
-        decl = {id = "", qualifier = {}, range = token.range}
-    elseif token.value == '*' or token.vlaue == '&' or token.value == '&&' then
-        local declQual = {token.value}
-        self:tryParseQualifier(declQual)
-
-        local next = self:getToken(true)
-        if next.value == '(' then
-            decl, innerQ = self:tryParseDecl()
-            if not decl then
-                self.lexer:SetCursor(cursor)
-                return
-            end
-
-            next = self:getToken(true)
-        elseif next.type == TokenType.kIdentifier then
-            decl = {id = next.value, qualifier = declQual, range = next.range}
-            next = self:getToken(true)
-        else
-            
-        end
-
-        if next.value ~= ')' then
-            self.lexer:SetCursor(cursor)
-            return
-        end
-
-        decl = decl or {id = "", qualifier = qualifier, range = next.range}
-    elseif token.value == '(' then
-        decl, innerQ = self:tryParseDecl()
-        if not decl then
-            self.lexer:SetCursor(cursor)
-            return
-        end
-
-        local next = self:getToken(true)
-        if next.value ~= ')' then
-            self.lexer:SetCursor(cursor)
-            return
-        end
-    elseif value == "::" or token.type == TokenType.kIdentifier then
-        local combine = self:tryCombine(token)
-        if not combine.isMemberPtr or not self:isValidDeclID(combine.value) then
-            self.lexer:SetCursor(cursor)
-            return
-        end
-
-        local next = self:getToken(true)
-        if combine.isMemberPtr then
-            self:tryParseQualifier(qualifier)
-            if next.value == '(' then
-                decl, innerQ = self:tryParseDecl()
-                decl.memberRef = combine.value
-                next = self:getToken()
-            elseif next.type == TokenType.kIdentifier then
-                decl = {id = next.value, range = next.range, qualifier = qualifier, memberRef = combine.value}
-                next = self:getToken(true)
-            else
-                decl = {id = next.value, range = next.range, qualifier = qualifier, memberRef = combine.value}
-            end
-        else
-            decl = {id = combine.value, qualifier = qualifier, range = combine.range}
-        end
-
-        if next.value ~= ')' then
-            self.lexer:SetCursor(cursor)
-            return
-        end
-
-        qualifier = {}
-    else
-        self.lexer:SetCursor(cursor)
-        return
-    end
-
-    if not d.isFunction and not d.memberRef then
-        decl.qualifier = mergeQualifier(qualifier, d.qualifier)
-        qualifier = {}
-    else
-        qualifier = mergeQualifier(qualifier, q)
-    end
-end
-
 --[[ 尝试解析括号
     括号可能是函数、变量声明
 ]]
-function parserMeta:tryParseDecl2(decl)
+function parserMeta:tryParseDeclImpl()
     local cursor = self.lexer.cursor
-    local token = self:getToken(true)
     local qualifier = {}
+    local decl
+    local modifier
+    self:tryParseCV({})     -- drop invalid cv
+    local token = self:getToken(true)
     if token.value == ')' then
-        decl.id = ""
-        decl.range = token.range
-        decl.paramenters = {}
+        decl = {
+            id = "", 
+            range = token.range,
+            type = {
+                kind = TypeKind.kFunction,
+                qualifer = {},
+                ret = {qualifier = {}},
+                args = {}
+            }
+        }
+        modifier = decl.type.ret
         self:rollback(token)
     elseif token.value == '*' or token.vlaue == '&' or token.value == '&&' then
         table.insert(qualifier, token.value)
+        --print("22222222222 xxxxxxxxxxxxx")
         self:tryParseQualifier(qualifier)
-
+        --print("11111111111 xxxxxxxxxxxxx")
+        --lib.Log(qualifier)
         local next = self:getToken(true)
         if next.value == '(' then
-            if not self:tryParseDecl2(decl) then
+            decl, modifier = self:tryParseDeclImpl(decl)
+            if not decl then
                 self:error("")
                 return
             end
-        elseif next.type == TokenType.kIdentifier then
-            decl.id = next.value
-            decl.range = next.range
         else
-            decl.id = ""
-            decl.range = next.range
-            self:rollback(next)
-        end
-    elseif token.value == '(' then
-        if not self:tryParseDecl2(decl) then
-            self:error("")
-            return
-        end
-    elseif value == "::" or token.type == TokenType.kIdentifier then
-        local combine = self:tryCombine(token)  --TODO: trycombine 内部有问题，多读取了一个token
-        if not combine.isMemberPtr and not self:isValidDeclID(combine.value) then
-            self:error("")
-            return
-        end
-        print("yyyyyy", combine.value, combine.id)
-        print(string.sub(self.lexer.source, self.lexer.cursor))
-        if combine.isMemberPtr then
-            self:tryParseQualifier(qualifier)
-            decl.memberRef = combine.value
-
-            local next = self:getToken(true)
-            if next.value == '(' then
-                if not self:tryParseDecl2(decl) then
-                    self:error("")
-                    return
-                end
-            elseif next.type == TokenType.kIdentifier then
+            decl = {type = {qualifier = {}}}
+            modifier = decl.type
+            if next.type == TokenType.kIdentifier then
                 decl.id = next.value
                 decl.range = next.range
             else
@@ -1882,9 +1809,66 @@ function parserMeta:tryParseDecl2(decl)
                 decl.range = next.range
                 self:rollback(next)
             end
+        end
+    elseif token.value == '(' then
+        decl, modifier = self:tryParseDeclImpl(decl)
+        if not decl then
+            self:error("")
+            return
+        end
+    elseif value == "::" or token.type == TokenType.kIdentifier then
+        local combine = self:tryCombine(token)
+        if not combine.isMemberPtr and not self:isValidDeclID(combine.value) then
+            self:error("")
+            return
+        end
+        print("yyyyyy", combine.value, combine.kind)
+        print(string.sub(self.lexer.source, self.lexer.cursor))
+        if combine.kind == CombinedKind.kMemberPtr then
+            self:tryParseQualifier(qualifier)
+            local next = self:getToken(true)
+            print("zzzzzzz", combine.value)
+            if next.value == '(' then
+                decl, modifier = self:tryParseDeclImpl()
+                print("cccccccc", string.sub(self.lexer.source, self.lexer.cursor))
+                if not decl then
+                    self:error("")
+                    return
+                end
+
+                modifier.kind = TypeKind.kMemberPtr
+                modifier.class = combine.value
+                modifier.ret = {qualifier = {}}
+                --mergeQualifier(modifier.qualifer, qualifier)
+                --qualifier = {}
+                --modifier = modifier.ret
+
+            else
+                decl = {
+                    type = {
+                        kind = TypeKind.kMemberPtr,
+                        class = combine.value,
+                        qualifier = {},
+                        ret = {qualifier = {}}
+                    }
+                }
+                modifier = decl.type
+                if next.type == TokenType.kIdentifier then
+                    decl.id = next.value
+                    decl.range = next.range
+                else
+                    decl.id = ""
+                    decl.range = next.range
+                    self:rollback(next)
+                end
+            end
         else
-            decl.id = combine.value
-            decl.range = combine.range
+            decl = {
+                id = combine.value,
+                range = combine.range,
+                type = {qualifier = {}}
+            }
+            modifier = decl.type
         end
     else
         return
@@ -1893,11 +1877,19 @@ function parserMeta:tryParseDecl2(decl)
     local next = self:getToken(true)
     if next.value == '(' then
         print(string.sub(self.lexer.source, self.lexer.cursor))
-        if not decl.paramenters then
-            decl.paramenters = self:tryParseDeclAruments()
+        if not modifier.args then
+            modifier.args = self:tryParseDeclAruments()
         else
             self:error("")
         end
+
+        if modifier.kind == TypeKind.kMemberPtr then
+            modifier.kind = TypeKind.kMemberFuncPtr
+        else
+            modifier.kind = TypeKind.kFunction
+            modifier.ret = {qualifier = {}}
+        end
+        modifier = modifier.ret
         next = self:getToken(true)
     end
 
@@ -1906,63 +1898,172 @@ function parserMeta:tryParseDecl2(decl)
         return
     end
 
-    -- 函数与成员指针需要区分类型修饰符的位置（变量、返回值）
-    if decl.paramenters or decl.memberRef then
-        decl.typeQualifier = mergeQualifier(qualifier, decl.typeQualifier)
-    else
-        decl.qualifier = mergeQualifier(qualifier, decl.qualifier)
-    end
+    mergeQualifier(modifier.qualifier, qualifier)
 
-    print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
-    lib.Log(decl)
+    -- 函数与成员指针需要区分类型修饰符的位置（变量、返回值）
+    --if decl.paramenters or decl.memberRef then
+    --    decl.typeQualifier = mergeQualifier(qualifier, decl.typeQualifier)
+    --else
+    --    decl.qualifier = mergeQualifier(qualifier, decl.qualifier)
+    --end
+
+
 
     --lib.Log(qualifier)
     --print(decl.paramenters, decl.memberRef)
 
-    if not decl.paramenters then
+    if not modifier.args then
         next = self:getToken()
         if next then
             if next.value == '(' then
-                decl.paramenters = self:tryParseDeclAruments()
+                modifier.args = self:tryParseDeclAruments()
+                if modifier.kind == TypeKind.kMemberPtr then
+                    modifier.kind = TypeKind.kMemberFuncPtr
+                else
+                    modifier.kind = TypeKind.kFunction
+                    modifier.ret = {qualifier = {}}
+                end
+                modifier = modifier.ret
             else
                 self:rollback(next)
             end
         end
     end
+
+    --print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
+    --lib.Log(decl)
+    return decl, modifier
+end
+
+function parserMeta:tryParseDecl()
+    local cursor = self.lexer.cursor
+    local decl, modifier = self:tryParseDeclImpl()
+    if not decl then
+        self.lexer:SetCursor(cursor)
+        return
+    end
+
+    local s = self.sentance
+    if not s.declarator then
+        self:buildDeclarator()
+    end
+
+    -- 复制类型
+    local type = s.declarator.type
+    mergeQualifier(modifier.qualifer, type.modifier)
+    lib.ShallowCopy(type, modifier)
+
+    -- 设置语句
+    s.declarator.kind = ObjectType.kVariate
+    s.declarator.type = decl.type
+    s.declarator.seq = decl.seq
     return true
 end
 
-function parserMeta:isConstructImpl(s)
+
+function parserMeta:isConstructImpl(seq)
     return false
+end
+
+function parserMeta:isMemberFunctionImpl(seq)
+end
+
+function parserMeta:skipBracketBody()
+    local c = self.lexer:JumpCtrl(')')
+    if not c then
+        self:error("")
+    end
+end
+
+function parserMeta:skipFunctionBody()
+    local t = self:getToken(true)
+    if t.value == '{' then      -- 函数体
+        if not self.lexer.JumpCtrl('}') then
+            self:error("")
+        end
+    elseif t.value ~= ';' then  -- 函数声明
+        self:rollback(t)
+    end
 end
 
 -- 打开圆括号
 function parserMeta:openBracket()
-    local sen = self.sentance
-    if not sen.specifier or not sen.specifier.seq then
-        self:error("unknown \"()\"")
+    local s = self.sentance
+    if not s.specifier and not s.declarator.seq then
+        if not self.lexer:JumpCtrl(')') then
+            self:error("")
+        else
+            self:warning("unknown \"()\"")
+        end
+
+        self.sentance = makeSentance()
+        return
     end
 
-    if not sen.declarator or not sen.declarator.seq then
-        if self:isConstructImpl(sen.specifier.seq.value) then
-            --TODO: skip 构造函数实现
+    if s.declarator.seq then
+        local seq = s.declarator.seq
+        -- 检查是否函数？
+        if self:isMemberFunctionImpl(seq) then
+            -- 跳过函数实现
         else
-            --try
-            local cursor = self.lexer.cursor
-            local decl = {typeQualifier = {}, qualifier = {}}
-            if self:tryParseDecl2(decl) then
-                local s = self.sentance
-                self:buildDeclarator()
-
-                --TODO:
+            local args = self:tryParseDeclAruments()
+            if args then
+                s.declarator.kind = ObjectType.kFunction
+                s.declarator.args = args
+                s.declarator.attr = self:tryParseFuncAttr()
+                --TODO: 跳过函数实现
             else
-                self.lexer:SetCursor(cursor)
+                s.declarator.kind = ObjectType.kVariate
             end
+        end
+        --TODO: 函数声明或变量构造？ struct Obj g_Obj(1); // 声明全局变量
+    else
+        local seq = s.specifier
+        if self.domain.kind == ObjectType.kClass and self.domain.name == seq.value then
+            s.declarator.attr.isConstruct = true
+            local args = self:tryParseDeclAruments()
+            if args then
+                s.declarator.kind = ObjectType.kFunction
+                s.declarator.args = args
+                s.declarator.attr = self:tryParseFuncAttr()
+                self:skipFunctionBody()
+                --TODO: 跳过函数实现
+            else
+                self:error()
+            end
+            -- 构造函数声明
+        elseif self:isConstructImpl(seq) then
+            -- 跳过构造函数
+            self:skipBracketBody()
+            self:skipFunctionBody()
+        elseif not self:tryParseDecl() then
+            if s.isUsing or self.block.kind == BlockKind.kBracket then
+                local args = self:tryParseFuncAttr()
+                if args then
 
+                else
+                    
+                end
+            else
+
+            end
+            -- 未知调用
         end
     end
 
 --[[
+    if not sen.declarator or not sen.declarator.id then
+        --local 
+        if self:isConstructImpl(sen.specifier.seq.value) then
+            --TODO: skip 构造函数实现
+        else
+            if not self:tryParseDecl() then
+                --TODO:
+            end
+        end
+    end
+
+
     local block = self:pushBlock(self.domain, 1, ')')
     self:doParse()
     self:popBlock()
@@ -2373,5 +2474,9 @@ local source = [[
 --parser:processClass()
 
 --parser:ParseSource([[*foo_6)(void) ]])
-parser:ParseSource([[(*(foo_6))(void)) ]])
---parser:ParseSource[[*(*(*const foo_4)(void))) ]]    -- 这里为什么需要一个空格？
+--parser:ParseSource([[(*(foo_6))(void)) ]])
+--parser:ParseSource[[*(*(* const foo_4)(void))) ]]    -- 这里为什么需要一个空格？
+
+parser:ParseSource([[BaseObj::* const ((BaseObj::* const p_4)())) ]])
+--parser:ParseSource([[BaseObj::* (*p_get_mem_ptr_4)()) ]])
+--parser:ParseSource([[BaseObj::* (*p_get_mem_ptr_5))() ]])

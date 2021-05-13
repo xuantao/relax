@@ -1,6 +1,17 @@
 ﻿local gbk = require "gbk"
 local lib = {}
 
+-- 浅拷贝
+function lib.ShallowCopy(src, dst)
+    if not src then return dst end
+
+    dst = dst or {}
+    for k, v in pairs(src) do
+        dst[k] = v
+    end
+    return dst
+end
+
 function lib.Find(tab, value)
     for k, v in pairs(tab) do
         if v == value then

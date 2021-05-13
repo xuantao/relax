@@ -107,3 +107,9 @@ decl = {
     paramenters,    -- 表示是函数
     memberRef,      -- 表示是成员指针
 }
+
+combine {
+    kind,   -- 类型
+    value,  -- 字符
+    range,  -- 范围
+}
