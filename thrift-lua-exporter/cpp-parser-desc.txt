@@ -27,6 +27,7 @@ except {
     isAnonymous,    -- 是否匿名
     tags,           -- 标记
     attrs,          -- 编译属性
+
     domain,         -- 所属域
     location,
     macroSwitch,    -- 宏开关
@@ -115,3 +116,13 @@ combine {
     value,  -- 字符
     range,  -- 范围
 }
+
+完善括号识别
+1. int (id),
+  参数列表、Using语句 -> 函数
+  声明语句 -> 变量
+2. int id(other)
+  参数列表 —> 函数
+  声明语句，other如果是类型则为函数，反之为变量初始化
+
+

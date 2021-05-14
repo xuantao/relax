@@ -596,6 +596,17 @@ local function isSpecifierSeqEmpty(seq)
         not seq.isMutable
 end
 
+local domainMeta = {}
+
+function domainMeta:Lookup(name, mode, preferType)
+    --TODO: 需要完善名字查找逻辑
+    for _, obj in ipairs(self.objs) do
+        if obj.id == name then
+            return obj
+        end
+    end
+end
+
 local parserMeta = {}
 
 
@@ -621,6 +632,7 @@ function CreateParser(cfg)
             sentance = makeSentance(),
             block = {kind = 1, closeSymbol = "", objs = {}},
             stack = {},
+            anonymousIdx = 0,
         }, {
             __index = parserMeta
         }
@@ -635,7 +647,7 @@ end
 function parserMeta:ParseSource(source)
     self.lexer = CreateLexer(source)
     self:doParse()
-    --lib.Log(self.block.objs)
+    lib.Log(self.block.objs)
     --[[
     self.sentance = makeSentance()
     local ok = self:tryParseDeclImpl()
@@ -648,9 +660,8 @@ function parserMeta:setSource(source)
     self.lexer = CreateLexer(source)
 end
 
-function parserMeta:resetMark()
-    self.domain.temporary = createMark()
-    --self.mark = createMark()
+function parserMeta:resetSentance()
+    self.sentance = makeSentance()
 end
 
 function parserMeta:getToken(isExpect)
@@ -747,9 +758,6 @@ function parserMeta:doParse()
                 self:error("unexpect end")
             end
             break
-        elseif token.value == self.block.closeSymbol then
-            print("1 bbbbbbbbbbbbbbbbbbbb")
-            break
         end
 
         local value = token.value
@@ -759,7 +767,8 @@ function parserMeta:doParse()
                     self:error("only class/struct accept the keyword " .. value)
                 end
                 self:expect(':')
-                self.domain.access = toAccessType(value)
+                --self.domain.access = toAccessType(value)
+                self.block.access = toAccessType(value)
             elseif value == "const" or value == "volatile" or value == "mutable" then
                 self:appendQualifier(token)
             elseif value == "using" then
@@ -778,7 +787,7 @@ function parserMeta:doParse()
             elseif value == "void" then
                 self:setSpecifier({kind = CombinedKind.kRaw, value = value, range = token.range})
             elseif value == "namespace" then
-                self:processNamespace()
+                self:parseNamespace()
             elseif value == "struct" or value == "class" then
                 self:processClass(value == "struct")
             elseif value == "enum" then
@@ -842,6 +851,11 @@ function parserMeta:doParse()
         else
             self:error("unknown")
         end
+
+        if token.value == self.block.closeSymbol then
+            print("1 bbbbbbbbbbbbbbbbbbbb")
+            break
+        end
     end
 end
 
@@ -888,13 +902,12 @@ function parserMeta:popDomain()
 end
 
 function parserMeta:pushBlock(domain, closeSymbol)
-    local backup = {
+    table.insert(self.stack, {
         domain = self.domain,
         sentance = self.sentance,
         block = self.block,
-    }
+    })
 
-    table.insert(self.stack, backup)
     self.domain = domain
     self.sentance = makeSentance()
     self.block = {closeSymbol = closeSymbol, objs = {}}
@@ -905,7 +918,7 @@ function parserMeta:popBlock()
     local pos = #self.stack
     local backup = self.stack[pos]
     table.remove(self.stack, pos)
-    print("parserMeta:popBlock", pos)
+    --print("parserMeta:popBlock", pos)
     self.domain = backup.domain
     self.sentance = backup.sentance
     self.block = backup.block
@@ -913,46 +926,15 @@ end
 
 local function mergeQualifier(l, r)
     --TODO: 合并const、volaite
-    print("merge qualifier")
+    --print("merge qualifier")
     if not l then return r end
     if not r then return l end
     for _, v in ipairs(r) do
         table.insert(l, v)
     end
-    print("merge qualifier")
-    lib.Log(l)
+    --print("merge qualifier")
+    --lib.Log(l)
     return l
-end
-
-function parserMeta:setType(combined)
-    print("parserMeta:setType", self.mark, self.mark.type, combined.id)
-    --lib.Log(combined)
-    --log(self.mark)
-    --log(combined)
-    --lib.Log(self.domain.temporary.type)
-    assert(self.domain.temporary.type == nil)--, self.mark.type.name)
-
-    if not combined then
-        self.domain.temporary.type = {
-            id = '', 
-            qualifier = self.domain.temporary.qualifier,
-        }
-    else
-        self.domain.temporary.type = {
-            id = combined.id,
-            --tokens = combined.tokens,
-            qualifiers = self.domain.temporary.qualifier,
-        }
-    end
-    self.domain.temporary.qualifier = {}
-end
-
-function parserMeta:setIdentify(combined)
-    assert(self.domain.temporary.identify == nil)
-    self.domain.temporary.identify = {
-        id = combined.id,
-        --tokens = combined.tokens,
-    }
 end
 
 function parserMeta:parseInherits(defaultAccess)
@@ -963,9 +945,9 @@ function parserMeta:parseInherits(defaultAccess)
         local token = self:getToken(true)
         local value = token.value
         if value == "decltype" or value == "::" or token.type == TokenType.kIdentifier then
-            local com = self:combineDecltype(token)
-            if com.kind ~= CombinedKind.kIdentifier and com.kind ~= CombinedKind.kRefer then
-                self:error("")
+            local com = self:tryCombine(token)
+            if com.kind ~= CombinedKind.kIdentify and com.kind ~= CombinedKind.kRefer then
+                self:error("expect a type name")
             end
 
             table.insert(inherits, element)
@@ -1025,12 +1007,12 @@ function parserMeta:combineDecltype(token)
 end
 
 function parserMeta:combineOperator()
-    local com = {}
+    local com = {kind = CombinedKind.kOperator}
     local qualifier = self:tryParseQualifier()
     local token = self:getToken()
     local value = token.value
     if token.type == TokenType.kSymbol then -- 重载操作符
-        com.kind = CombinedKind.kOperatorSymbol
+        --com.kind = CombinedKind.kOperatorSymbol
         if value == '(' then
             local next = self:expcet(')')
             com.value = '()'
@@ -1049,11 +1031,11 @@ function parserMeta:combineOperator()
             self:error()
         end
 
-        com.kind = CombinedKind.kOperatorLiteral
+        --com.kind = CombinedKind.kOperatorLiteral
         com.value = next.value
         com.range = next.range
     elseif value == "new" or value == "delete" then
-        com.kind = CombinedKind.kNewDelete
+        --com.kind = CombinedKind.kNewDelete
         com.value = value
         com.range = token.range
         if self.peekToken(true).value == '[' then
@@ -1062,13 +1044,13 @@ function parserMeta:combineOperator()
             com.range[2] = self:expect(']').range[2]
         end
     elseif token.type == TokenType.kIdentifier or value == "::" then  -- 重载类型转换
-        local type = self:trycombine(token)
+        local type = self:tryCombine(token)
         if type.kind ~= CombinedKind.kIdentify or type.kind ~= CombinedKind.kRefer then
             self:error()
         end
         --TODO:
         com.qualifier = self:tryParseQualifier(qualifier)
-        com.kind = CombinedKind.kOperatorTypeCast
+        --com.kind = CombinedKind.kOperatorTypeCast
         com.value = type.value
         com.range = type.range
     else
@@ -1269,7 +1251,7 @@ function parserMeta:combineNames()
         self:rollback(token)
     end
 
-    lib.Log(tokenList)
+    --lib.Log(tokenList)
 
     -- 构建名称
     local id = ""
@@ -1321,21 +1303,33 @@ function parserMeta:parseUsing()
     --TODO:
 end
 
-function parserMeta:processNamespace()
+function parserMeta:parseNamespace()
     local token = self:getToken()
-    local id = token.value
+    local symbol
     if token.type == TokenType.kIdentifier then
-        token = self:getToken()
+        symbol = self:getToken()
     else
-        id = self:genAnonymousName()
+        symbol = token
+        token = nil
     end
 
-    if token.value ~= '{' then
-        self:error("namespace expect symbol '{'")
+    if symbol.value == ';' then
+        return
+    elseif symbol.value ~= '{' then
+        self:error("unexpect token")
     end
 
-    local domain = self:getDomain(id) or self:newDomain(id, DomainType.kNamespace)
-    local block = self:pushBlock(domain, '}')
+    local isAnonymous
+    if not token then
+        isAnonymous = true
+        token = {value == self:genAnonymousName(), range = symbol.range}
+    end
+
+    local ns = self:makeNamespace(token)
+    ns.isAnonymous = isAnonymous
+
+    local block = self:pushBlock(ns, '}')
+    block.objs = ns.objs
     self:doParse()
     self:popBlock()
 end
@@ -1353,7 +1347,7 @@ function parserMeta:processEnum()
     end
 
     if token.value == ';' then
-        self:resetMark()
+        self:resetSentance()
         return
     end
 
@@ -1373,65 +1367,114 @@ function parserMeta:processEnum()
     end
 end
 
-local _idx = 0
 -- 生成唯一名称
 function parserMeta:genAnonymousName()
-    _idx = _idx + 1
-    return string.froamt("_anonymous_%s_", _idx)
+    self.anonymousIdx = self.anonymousIdx + 1
+    return string.froamt("_anonymous_%s_", self.anonymousIdx)
 end
 
-local _defaultLoc = {
-    file 
-}
-
-function parserMeta:makeType(combined)
-    local qualifier = self.domain.temporary.qualifier
-    self.domain.temporary.qualifier = {}
-    if not combined then
-        return {
-            id = self:genAnonymousName(),
-            isAnonymous = true,
-            location = self.lexer:Location(),
-            qualifier = self.domain.temporary.qualifier,
-        }
-    else
-        return {
-            id = combined.id,
-            location = combined.location,
-            qualifier = mergeQualifier(qualifier, combined.qualifier),
-        }
+function parserMeta:makeNamespace(seq)
+    local ns = self.domain:Lookup(seq.name)
+    if ns then
+        return ns
     end
+
+    ns = setmetatable({
+            kind = ObjectType.kNamespace,
+            id = seq.name,
+            loc = self.lexer:Location(seq.range),
+            domain = self.domain,
+            attr = {},
+            objs = {},
+        }, {
+            __index = domainMeta
+        }
+    )
+
+    table.insert(self.domain.objs, ns)
+    return ns
 end
 
-function parserMeta:newClass(id, location, isStruct)
+function parserMeta:makeClass(seq, isStruct, isPreDef)
+    if not seq or seq.kind ~= CombinedKind.kIdentify then
+        self:error("declare class/struct name is invalid", seq.range)
+        return
+    end
+
     if self.domain.category ~= DomainType.kGlobal or
         self.domain.category ~= DomainType.kNamespace or
         self.domain.category ~= DomainType.kClass then
-        self:error("current domain not allow declare class/struct type", location)
+        self:error("current domain not allow declare class/struct type", seq.range)
     end
 
-    local domain = self:newDomain(id, DomainType.kClass)
-    domain.isStruct = isStruct
-    return domain
+    local cls = self.domain:Lookup(seq.value)
+    if not cls then
+        cls = setmetatable({
+                kind = ObjectType.kClass,
+                id = seq.value,
+                isStatic = isStatic,
+                loc = self.lexer:Location(seq.range),
+                attr = {},
+                domain = self.domain,
+                isPreDef = isPreDef,
+                objs = {},
+            }, {
+                __index = domainMeta
+            }
+        )
+        cls.isStruct = isStruct
+        cls.isPreDef = isPreDef
+        cls.loc = self.lexer:Location(seq.range)
+    end
+
+    if not isPreDef then
+        if not cls.isPreDef then
+            self:error("rename")
+        end
+
+        cls.isPreDef = nil
+        cls.loc = self.lexer:Location(seq.range)
+    end
+    return cls
 end
 
 function parserMeta:processClass(isStruct)
-    local combined = self:combineNames()
-    local type = self:makeType(combined)
-    self:setType(combined)
-
+    local combined = self:tryCombine()
     local symbol = self:getToken()
-    local value = symbol.value
+
+    if symbol.value == ';' then
+        self:makeClass(combined, isStruct, true)
+        return  -- 前置声明
+    end
+
     if symbol.value ~= "final" and symbol.value ~= ':' and symbol.value ~= '{' then
         self:rollback(symbol)
+
+        if not combined or
+            (combine.kind ~= CombinedKind.kIdentify and combined.kind ~= CombinedKind.kRefer) then
+            self:error("class/struct expect and identify name")
+        end
+        self:setSpecifier(combined)
         return  -- 定义变量
     end
-    lib.Log(type)
 
-    local cls = self:newDomain(type.id, DomainType.kClass)
-    self:pushDomain(cls)
+    -- 匿名数据结构
+    local isAnonymous
+    if symbol.value == '{' and not combined then
+        isAnonymous = true
+        combined = {
+            kind = CombinedKind.kIdentify,
+            value = self:genAnonymousName(),
+            range = symbol.range,
+        }
+    end
+
+    local cls = self:makeClass(combined, isStruct, nil)
+    cls.isAnonymous = isAnonymous
+    self:setSpecifier(combined)
+
     if symbol.value == "final" then
-        cls.isFinale = true
+        cls.isFinal = true
         symbol = self:getToken()
     end
 
@@ -1444,55 +1487,11 @@ function parserMeta:processClass(isStruct)
         self:error("except class body")
     end
 
-    local cls = self:newDomain(combined and combined.name or '', DomainType.kClass, AccessType.kPublic)
     local block = self:pushBlock(cls, '}')
+    block.objs = cls.objs
+    self:doParse()
     self:popBlock()
-end
-
-function parserMeta:processVariate()
-    local temporary = self.domain.temporary
-    if not temporary.type or not temporary.identify then
-        self:error("declare variate is not completed")
-    end
-
-    --TODO: 完善变量声明
-    local var = {
-        type = ObjectType.kVariate,
-        name = temporary.identify.name,
-        _type = temporary.type.name,
-        qualifier = temporary.qualifier,
-        assign = temporary.assign,
-        array = temporary.array;
-    }
-    table.insert(self.domain.vars, var)
-end
-
-function parserMeta:setDeclSeq(seq)
-    local sen = self.sentance
-    if sen.state == SentanceState.kSpecifierSeq and not sen.specifierSeq.info then
-        sen.specifierSeq.info = seq
-    elseif sen.state == SentanceState.kDeclcrator and not sen.declarator.info then
-        sen.declarator.info = seq
-        sen.state = SentanceState.kSurffix
-    else
-        self:error()
-    end
-end
-
-local function makeType(seq, qualifier)
-    if not seq then
-        return
-    end
-
-    local type = {name = seq.value, qualifier = qualifier}
-    if seq.kind == CombinedKind.kRaw then
-        type.kine = TypeKind.kRaw
-    elseif seq.kind == CombinedKind.kIdentify or seq.kind == CombinedKind.kRefer then
-        type.kind = TypeKind.kRefer
-    else
-        self:error("")
-    end
-    return type
+    --TODO: 是否要校验结果
 end
 
 function parserMeta:appendQualifier(token)
@@ -1566,7 +1565,9 @@ end
 
 -- 逗号
 function parserMeta:meetComma()
+    print("parserMeta:meetComma", self.block.isArgsBlock)
     self:produce()
+
     if not self.block.isArgsBlock then   -- 参数列表声明中
         local s = self.sentance
         s.declarator = {
@@ -1624,7 +1625,7 @@ function parserMeta:closeBrace()
     end
 
     --TODO: 这里可以检查是否非正常结束
-    self:resetMark()
+    self:resetSentance()
     self.domain.temporary = nil
     self:popDomain()
 end
@@ -1641,7 +1642,38 @@ function parserMeta:parseBracket()
 end
 
 function parserMeta:tryParseFuncAttr()
-    return {}
+    local attr = {}
+    local type
+    while true do
+        local token = self:getToken(true)
+        local value = token.value
+        if value == "const" then
+            attr.isConst = true
+        elseif value == "noexcept" then
+            attr.isNoexcept = true
+        elseif value == "->" then
+            --TODO: 
+            type = {}
+        elseif value == '&' or value == "&&" then
+            print("what is this")
+        elseif value == "override" or value == "final" then
+            attr.isVirtual = true
+        elseif value == '=' then
+            local next = self:getToken(true)
+            if next.value == "delete" then
+                attr.isDelete = true
+            elseif next.value == "default" then
+                attr.isDefault = true
+            else
+                self:error("unexpect token here")
+            end
+        else
+            self:rollback(token)
+            break
+        end
+    end
+
+    return attr, type
 end
 
 function parserMeta:tryParseCV(q)
@@ -1713,8 +1745,7 @@ function parserMeta:tryParseDeclImpl()
     local token = self:getToken(true)
     if token.value == ')' then
         decl = {
-            id = "", 
-            range = token.range,
+            seq = {kind = CombinedKind.kIdentify, value = "", range = token.range},
             type = {
                 kind = TypeKind.kFunction,
                 qualifier = {},
@@ -1741,11 +1772,9 @@ function parserMeta:tryParseDeclImpl()
             decl = {type = {qualifier = {}}}
             modifier = decl.type
             if next.type == TokenType.kIdentifier then
-                decl.id = next.value
-                decl.range = next.range
+                decl.seq = {kind = CombinedKind.kIdentify, value = next.value, range = next.range}
             else
-                decl.id = ""
-                decl.range = next.range
+                decl.seq = {kind = CombinedKind.kIdentify, value = "", range = next.range}
                 self:rollback(next)
             end
         end
@@ -1789,18 +1818,22 @@ function parserMeta:tryParseDeclImpl()
                 }
                 modifier = decl.type
                 if next.type == TokenType.kIdentifier then
-                    decl.id = next.value
-                    decl.range = next.range
+                    decl.seq = {kind = CombinedKind.kIdentify, value = next.value, range = next.range}
+                    --decl.id = next.value
+                    --decl.range = next.range
                 else
-                    decl.id = ""
-                    decl.range = next.range
+                    decl.seq = {kind = CombinedKind.kIdentify, value = "", range = next.range}
+                    --decl.id = ""
+                    --decl.range = next.range
                     self:rollback(next)
                 end
             end
         else
             decl = {
-                id = combine.value,
-                range = combine.range,
+                --seq = {kind = CombinedKind.kIdentify, value = "", range = next.range},
+                --id = combine.value,
+                --range = combine.range,
+                seq = combine,
                 type = {qualifier = {}}
             }
             modifier = decl.type
@@ -1892,7 +1925,8 @@ function parserMeta:tryParseDecl()
     s.declarator.kind = ObjectType.kVariate
     s.declarator.type = decl.type
     s.declarator.seq = decl.seq
-    lib.Log(s.declarator)
+    --print("parserMeta:tryParseDecl()")
+    --lib.Log(decl)
     return true
 end
 
@@ -1912,13 +1946,45 @@ function parserMeta:skipBracketBody()
 end
 
 function parserMeta:skipFunctionBody()
-    local t = self:getToken(true)
-    if t.value == '{' then      -- 函数体
+    local token = self:getToken(true)
+    -- 跳过初始化列表
+    if token.value == ':' then
+        while true do
+            local c = self:tryCombine()
+            if not c or (c.kind ~= CombinedKind.kIdentifier and c.kind ~= CombinedKind.kRefer) then
+                self:error("unexpect token")
+            end
+
+            local symbol = self:getToken(true).value
+            local closeSymbol
+            if symbol == '(' then
+                closeSymbol = ')'
+            elseif symbol == '{' then
+                closeSymbol = '}'
+            else
+                self:error("unexpect symbol")
+            end
+
+            if not self.lexer.JumpCtrl(closeSymbol) then
+                self:error("")
+            end
+
+            token = self:getToken()
+            if token.value == '{' then
+                break
+            elseif token.value == ',' then
+                self:error("unexpect")
+            end
+        end
+    end
+
+    -- 跳过函数体
+    if token.value == '{' then      -- 函数体
         if not self.lexer.JumpCtrl('}') then
             self:error("")
         end
-    elseif t.value ~= ';' then  -- 函数声明
-        self:rollback(t)
+    elseif token.value ~= ';' then  -- 函数声明
+        self:error("unexpect token")
     end
 end
 
@@ -1926,7 +1992,8 @@ end
 function parserMeta:openBracket()
     print("parserMeta:openBracket", string.sub(self.lexer.source, self.lexer.cursor))
     local s = self.sentance
-    if not s.specifier and not s.declarator.seq then
+    local decl = s.declarator
+    if not s.specifier and not decl.seq then
         if not self.lexer:JumpCtrl(')') then
             self:error("")
         else
@@ -1937,377 +2004,78 @@ function parserMeta:openBracket()
         return
     end
 
-    if s.declarator.seq then
-        local seq = s.declarator.seq
+    --TODO: 函数声明或变量构造？ struct Obj g_Obj(1); // 声明全局变量
+    if decl.seq then
+        local seq = decl.seq
         -- 检查是否函数？
         if self:isMemberFunctionImpl(seq) then
             -- 跳过函数实现
+            return
+        end
+
+        local args = self:tryParseArgs()
+        if args then
+            decl.kind = ObjectType.kFunction
+            decl.args = args
+            --s.declarator.attr = self:tryParseFuncAttr()
+            --TODO: 跳过函数实现
         else
-            local args = self:tryParseArgs()
-            if args then
-                s.declarator.kind = ObjectType.kFunction
-                s.declarator.args = args
-                s.declarator.attr = self:tryParseFuncAttr()
-                --TODO: 跳过函数实现
-            else
-                s.declarator.kind = ObjectType.kVariate
-            end
-        end
-        --TODO: 函数声明或变量构造？ struct Obj g_Obj(1); // 声明全局变量
-    else
-        local seq = s.specifier
-        if self.domain.kind == ObjectType.kClass and self.domain.name == seq.value then
-            s.declarator.attr.isConstruct = true
-            local args = self:tryParseArgs()
-            if args then
-                s.declarator.kind = ObjectType.kFunction
-                s.declarator.args = args
-                s.declarator.attr = self:tryParseFuncAttr()
-                self:skipFunctionBody()
-                --TODO: 跳过函数实现
-            else
-                self:error()
-            end
-            -- 构造函数声明
-        elseif self:isConstructImpl(seq) then
-            -- 跳过构造函数
-            self:skipBracketBody()
-            self:skipFunctionBody()
-        elseif not self:tryParseDecl() then
-            if s.isUsing or self.block.isArgsBlock then
-                local args = self:tryParseFuncAttr()
-                if args then
-
-                else
-
-                end
-            else
-
-            end
-            -- 未知调用
-        end
-    end
-
---[[
-    if not sen.declarator or not sen.declarator.id then
-        --local 
-        if self:isConstructImpl(sen.specifier.seq.value) then
-            --TODO: skip 构造函数实现
-        else
-            if not self:tryParseDecl() then
-                --TODO:
-            end
-        end
-    end
-
-
-    local block = self:pushBlock(self.domain, ')')
-    self:doParse()
-    self:popBlock()
-
-    if self:peekToken().value == '(' then
-        -- 函数声明
-    elseif sen.isUsing or sen.isTypedefing then
-        -- 类成员指针
-    else
-        
-    end
-]]
---[=[
-    local domain = self.domain
-    local type = domain.temporary.type
-    local identify = domain.temporary.identify
-    if not type then
-        self:resetMark()
-        print("unknown ()")
-        if not self.lexer:JumpCtrl(')') then
-            self:error("111111")
-        end
-        return  -- unkown ()
-    end
-
-    local isConstruct
-    print("22222222222", identify, type)
-    --lib.Log(identify)
-    if not identify then
-        isConstruct = domain.type == DomainType.kClass and domain.id == type.id
-        identify = type
-        type = nil
-    end
-
-    -- 跳过成员函数实现、未知宏调用等
-    print("111111111111", identify.id, isConstruct, type)
-    --lib.Log(identify)
-    if #lib.Split(identify.id, "::") > 1 or (not isConstruct and not type) then
-        print("skip unknown (...)")
-        self:resetMark()
-        if not self.lexer:JumpCtrl(')') then
-            self:error("1111")
+            decl.kind = ObjectType.kVariate
         end
         return
     end
 
-    local func = {
-        category = ObjectType.kFunction,
-        id = identify.id,
-        ret = type,
-        args = {},
-        location = identify.location,
-    }
+    -- 构造函数
+    if self.domain.kind == ObjectType.kClass and self.domain.name == s.specifier.value then
+        decl.attr.isConstruct = true
+        decl.kind = ObjectType.kFunction
+        decl.seq = s.specifier
+        decl.type = nil
+        decl.args = self:tryParseArgs()
+        if not decl.args then
+            self:error("can not parse function arguments")
+        end
 
-    local obj = domain.children[identify.id]
-    if obj then
-        domain.children[identify.id] = {
-            category = ObjectType.kOverload,    -- 重载函数
-            parent = obj.parent,
-            overloads = {obj, func}
-        }
-    else
-        domain.children[identify.id] = func
+        local attr = self:tryParseFuncAttr()
+        lib.ShallowCopy(attr, decl.attr)
+
+        -- 跳过构造函数初始化列表
+        if self:peekToken().value == ':' then
+            if not self.lexer:JumpCtrl('{') then
+                self:error("skip constructor initializer list failed")
+            else
+                self.lexer:MoveCursor(-1)
+            end
+        end
+        return
     end
 
-    local temp = createDomain("", DomainType.kFunction)
-    temp.parent = domain
-    temp.func = func
-    self:resetMark()
-    self:pushDomain(temp)
-]=]
-end
+    -- 跳过构造函数实现
+    if self:isConstructImpl(s.specifier.value) then
+        self:skipBracketBody()
+        self:skipFunctionBody()
+        return
+    end
 
-local function isBlockEmpty(decl)
+    if not self:tryParseDecl() then
+        if s.isUsing or self.block.isArgsBlock then
+            local args = self:tryParseFuncAttr()
+            if args then
+
+            else
+
+            end
+        else
+
+        end
+        -- 未知调用
+    end
 end
 
 -- 关闭圆括号
 function parserMeta:closeBracket()
     self:produce()
-    --[[
-    local sen = self.sentance
-    -- 处理未结束的语句
-
-    local isSpeEmpty = isBlockEmpty(sen.specifierSeq)
-    local isDeclEmpty = isBlockEmpty(sen.declarator)
-
-    -- (), (void)
-    -- (*)
-    -- (A::*)
-    -- (int)
-    -- (int*)
-    -- ("literal")
-    -- (value)
-
-    if sen.constVal then
-        if not isSpeEmpty or not isDeclEmpty then
-            self:error("not allow")
-        end
-        table.insert(self.block.vals, {})
-    elseif not isSpeEmpty and not isDeclEmpty then
-        table.insert(self.block.vars, {kind = ObjectType.kVariate})
-    elseif not isDeclEmpty then
-        table.insert(self.block.vals, {})
-    elseif not isSpeEmpty then
-        if not sen.specifierSeq.info.id then
-            self:error()
-        elseif sen.specifierSeq.info.id ~= "void" then
-            table.insert(self.block.vars, {kind = ObjectType.kVariate})
-        end
-    end
-    ]]
-    --[=[
-    local domain = self.domain
-    local func = domain.func
-    if domain.category ~= DomainType.kFunction then
-        self:error("not a function")
-    end
-
-    -- 函数后缀
-    while true do
-        local value = self:getToken().value
-        if value == "const" then
-            func.isConst = true
-        elseif value == "noexcept" then
-            func.isNoExcept = true
-        elseif value == "->" then   -- 后置返回类型声明
-            print(string.sub(self.lexer.source, self.lexer.cursor))
-            local combined = self:combineNames()
-            --TODO: 整理函数数据结构
-            if func.ret.id ~= "auto" or not combined then
-                self:error("")
-            end
-            func.ret = {name = combined.value, tokens = combined.tokens}
-        elseif value == '=' then
-            local code = self:getToken().value
-            if code == 0 then
-                func.isAbstact = true
-            elseif code == "delete" then
-                func.isDeleted = true
-            elseif code == "default" then
-                func.isDefault = true
-            else
-                self:error("unexpect")
-            end
-        elseif value == ';' then
-            break;
-        elseif value == '{' then
-            if not self.lexer:JumpCtrl('}') then
-                self:error("11111")
-            end
-            break
-        else
-            self:error("unexpect")
-        end
-    end
-
-    self:resetMark()
-    self:popDomain()
-    ]=]
 end
-
---[[
-function parserMeta:processFunction()
-    local type = self.domain.temporary.type
-    local identify = self.domain.temporary.identify
-    if not type then
-        self:resetMark()
-        print("unknown ()")
-        if not self.lexer:JumpCtrl(')') then
-            self:error("111111")
-        end
-        return  -- unkown ()
-    end
-
-    local isConstruct
-    if not identify then
-        isConstruct = self.domain.type == DomainType.kClass and self.domain.name == self.domain.temporary.type.name
-        identify = type
-        type = {name = ''}
-    end
-
-    print("1111111111")
-    log(type)
-    print("2222222222")
-    log(identify)
-    print(identify.name)
-
-    -- 跳过成员函数实现、未知宏调用等
-    if #lib.Split(identify.name, "::") > 1 or (not isConstruct and type.name == '') then
-        self:resetMark()
-        if not self.lexer:JumpCtrl(')') then
-            self:error("1111")
-        end
-        return
-    end
-
-    --self.mark.isFunction = true
-    local func = {
-        type = ObjectType.kFunction,
-        name = identify.name,
-        ret = type,
-        identify = identify,
-        isConstruct = isConstruct,
-        params = {},
-    }
-
-    -- 解析参数列表
-    while true do
-        local combined = self:combineNames()
-        local param = {}
-        if combined then
-            param.type = {name = combined.value, tokens = combined.tokens}
-            local qualifier = self:combinedQualifier()
-            local identify = self:getToken()
-            local symbol
-            print("identify", identify.value)
-            print("combine", combined.value)
-            if identify.type == TokenType.kIdentifier then
-                param.name = identify.name
-                symbol = self:getToken()
-            else
-                param.name = ''
-                symbol = identify
-                identity = nil
-            end
-            if symbol.type ~= TokenType.kSymbol then
-                self:error()
-            end
-
-            local c = symbol.value
-            print("xxx", c, self.lexer:Pos().pos)
-            if c == '[' then
-                self.lexer:JumpCtrl(']')
-                c = self:getToken().value
-            end
-            if c == '=' then
-                param.hasDefault = true
-                c = self.lexer:JumpCtrl(',', ')')
-            end
-            print("xxx", c, self.lexer:Pos().pos)
-            if c == ',' then
-                table.insert(func.params, param)
-            elseif c == ')' then
-                table.insert(func.params, param)
-                break
-            else
-                self:error("")
-            end
-        else
-            local token = self:getToken()
-            if token.value == "..." then
-                table.insert(func.params, {name = '...'})
-                self:expect(')')
-                break
-            elseif token.value == "void" then
-                self:expect(')')
-                break
-            elseif token.value == ')' then
-                break
-            end
-        end
-    end
-
-    -- 函数后缀
-    while true do
-        local value = self:getToken().value
-        if value == "const" then
-            func.isConst = true
-        elseif value == "noexcept" then
-            func.isNoExcept = true
-        elseif value == "->" then   -- 后置返回类型声明
-            local combined = self:combineNames()
-            if func.ret.name ~= "auto" or not combined then
-                self:error("")
-            end
-            func.ret = {name = combined.value, tokens = combined.tokens}
-        elseif value == '=' then
-            local code = self:getToken().value
-            if code == 0 then
-                func.isAbstact = true
-            elseif code == "delete" then
-                func.isDeleted = true
-            elseif code == "default" then
-                func.isDefault = true
-            else
-                self:error("unexpect")
-            end
-        elseif value == ';' then
-            break;
-        elseif value == '{' then
-            if not self.lexer:JumpCtrl('}') then
-                self:error("11111")
-            end
-            break
-        else
-            self:error("unexpect")
-        end
-    end
-
-    self:resetMark()
-    print("func", func.name)
-    --lib.Log(func)
-    if not func.isDeleted then
-        --TODO
-     end
-end
-]]
 
 -- 不支持对函数声明操作 [= 0, = delete, = default]
 function parserMeta:parseAssign()
@@ -2343,15 +2111,15 @@ end
 
 -- 当前语句产生的对象类型
 function parserMeta:produce()
-    print("parserMeta:produce", string.sub(self.lexer.source, self.lexer.cursor))
+    --print("parserMeta:produce", string.sub(self.lexer.source, self.lexer.cursor))
     local s = self.sentance
     local decl = s.declarator
     local block = self.block
 
     if not decl.seq then
         if not block.isArgsBlock then
-            print("xxxxxxxxxxxxxxxxxxxxxxxxxx")
-            lib.Log(decl)
+            --print("xxxxxxxxxxxxxxxxxxxxxxxxxx")
+            --lib.Log(decl)
             self:error("declarator need a name")
         end
 
@@ -2444,4 +2212,4 @@ local source = [[
 --parser:ParseSource([[BaseObj::* (*p_get_mem_ptr_4)()) ]])
 --parser:ParseSource([[BaseObj::* (*p_get_mem_ptr_5))() ]])
 
-parser:ParseSource [[typedef int int_t, *intp_t, *(&fp)(int, ulong), arr_t[10]; ]]
+--parser:ParseSource [[typedef int int_t, *intp_t, *(&fp)(int, ulong), arr_t[10]; ]]
