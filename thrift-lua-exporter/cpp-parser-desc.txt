@@ -126,3 +126,8 @@ combine {
   声明语句，other如果是类型则为函数，反之为变量初始化
 
 
+1. 函数属性(const, noexcept, = delete, = default)等
+2. 函数返回值后置声明
+3. operator完善
+4. 声明、定义生成完善
+  函数实现？
