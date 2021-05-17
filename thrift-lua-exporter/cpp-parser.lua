@@ -761,6 +761,8 @@ function parserMeta:doParse()
                 self:parseBitField()
             elseif value == "::" then
                 self:appendDeclSeq(self:tryCombine(token))
+            elseif value == '~' then
+                self.sentance.declarator.attr.isDestructor = true
             elseif value == ',' then
                 self:meetComma()
             elseif value == ";" then
@@ -1088,6 +1090,15 @@ function parserMeta:tryCombine(token)
             ret.value = ret.value .. next.value
             ret.range[2] = next.range[2]
             break
+        elseif next.value == '~' then               -- 析构函数
+            local com = self:tryCombine()
+            if not com then
+                self:error("expect a type identify")
+            end
+
+            ret.value = ret.value .. next.value .. com.value
+            ret.range[2] = com.range[2]
+            break
         elseif next.value == "operator" then        -- 重载操作符
             self:rollback(next)
             local com = self:combineOperator()
@@ -1125,7 +1136,6 @@ function parserMeta:tryCombine(token)
         end
     end
 
-    ret.value = ret.value
     return ret
 end
 
