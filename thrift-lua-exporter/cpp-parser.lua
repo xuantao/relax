@@ -12,7 +12,7 @@ local Lc, T = lpeg.Lc, lpeg.T
 
 -- 匹配模式
 local p_space = lpeg.S' \t\n'                                               -- 空白字符
-local p_comment = P'//' * (1 - P'\n')^0 * (P'\n' + -P(1))                   -- 单行注释
+local p_comment = P'//' * ((P'\\\n' + P(1)) - P'\n')^0 * (P'\n' + -P(1))         -- 单行注释
 local p_multi_line_comment = P'/*' * (1 - P'*/')^0 * P'*/'                  -- 多行注释
 local p_empty = p_space + p_comment + p_multi_line_comment                  -- 空白内容
 local p_empty_list = p_empty^0
@@ -45,14 +45,19 @@ local c_numeric = P{
 }
 -- 字符串常量提取器
 local c_string = P{
-    "main",
-    main = Ct((V"string" * (p_empty^0 * V"string")^0)^1) / table.concat,
+    V"main" / function (s) return string.format("\"%s\"", s) end,
+    main = Ct((V"string" * ((p_empty + P"\\\n")^0 * V"string")^0)^1) / table.concat,
     string = V"shortStr" + V"longStr",
     shortStr = P'"' * Cs((P'\\"' + (P(1) - S'"\n'))^0) * P'"',
     longStr = V"open" * Cs((P(1) - V"closeEq")^0) * V"close" / 1,
     open = P'R"' * Cg(Cs((P(1) - P'(')^0), "init") * P'(',
     close = P')' * Cs((P(1) - P'"')^0) * P'"',
     closeEq = Cmt(V"close" * Cb("init"), function (s, i, a, b) return a == b end),
+}
+-- 提取一行文本内容
+local c_line = P{
+    Cs((V"exp" - (P"//" + '\n'))^0) * (p_comment + P'\n' + -P(1)),
+    exp = (p_multi_line_comment + S" \t" + P'\\\n')^1/' ' + c_char + c_string + C(P(1)),
 }
 
 local function buildSkipPatt(lcode, rcode)
@@ -162,8 +167,9 @@ local SkipType = {
 local c_round_bracket = buildSkipPatt('(', ')')
 local c_angle_bracket = P{
     Ct(V"exp") / table.concat,
-    exp = C(P'<') * (V"content" + (C(P(1)) - P'>'))^0 * C(P'>'),
-    content = p_empty + c_round_bracket + c_char + c_string + V"special" + V"exp",
+    --exp = C(P'<') * (V"content" + (C(P(1)) - P'>'))^0 * C(P'>'),
+    exp = C(P'<') * (V"content" - P'>')^0 * C(P'>'),
+    content = p_empty + c_round_bracket + c_char + c_string + V"special" + V"exp" + C(P(1)),
     special = C(P">=" + "<=" + ">>" + "<<"),
 }
 
@@ -196,9 +202,9 @@ local c_token = P{
     token = (V"keywords" + V"symbols" + V"identity" + V"const") * Cp(),
     identity = C(p_idsafe * (p_idsafe + p_digit)^0) / buildToken(TokenKind.kIdentify),
     keywords = C((
-        P"class" + "struct" + "enum" + "template" + "virtual" +
-        "typename" + "decltype" + "final" + "const" + "constexpr" + "volatile" + "mutable" +
-        "namespace" + "auto" + "operator" + "sizeof" + "typedef"
+        P"class" + "struct" + "union" + "enum" + "template" + "virtual" +
+        "typename" + "decltype" + "final" + "constexpr" + "const" + "volatile" + "mutable" +
+        "namespace" + "auto" + "operator" + "sizeof" + "typedef" + "static" + "inline" + "explicit"
         ) * -p_rest) / buildToken(TokenKind.kKeyword),
     symbols = C(P"..." + "&&" + "||" + "->" + "+=" + "-=" + "|=" + "&=" + "/=" + "*=" + "==" + ">=" + "<="
         + "::" + "<<" + ">>" + ':' + '#'
@@ -270,6 +276,7 @@ function lexerMeta:Capture(type)
         range = {self.cursor, p},
     }
     self.cursor = p
+    print(debug.traceback())
     print("lexer", "capture", s)
     return token
 end
@@ -568,7 +575,6 @@ function CreateParser(cfg)
             defines = {},
             lexer = nil,            -- 词法解析
             lexerStack = {},        -- 文件堆栈
-            mark = createMark(),    -- 局部解析标记
             domain = setmetatable({kind = ObjectType.kGlobal, id = "", objs = {},}, { __index = domainMeta }),
             sentance = makeSentance(),
             block = {kind = 1, closeSymbol = "", objs = {}},
@@ -657,7 +663,7 @@ function parserMeta:processIngore(token)
     if not after then return end
 
     if after.value == '(' then
-        if not self.lexer.JumpCtrl(')') then
+        if not self.lexer:JumpCtrl(')') then
             error("111")
         end
 
@@ -677,11 +683,20 @@ function parserMeta:processTag(token)
 end
 
 function parserMeta:preProcess()
+    --self.lexer
+    local s, p = lpeg.match(c_line * Cp(), self.lexer.source, self.lexer.cursor)
+    if s then
+        print("skip", s)
+        self.lexer.cursor = p
+    else
+        self:error()
+    end
 end
 
-function parserMeta:error(desc)
+function parserMeta:error(desc, range)
+    local loc = self.lexer:Location(range)
     lib.Log(self.sentance)
-    print("at:" .. string.sub(self.lexer.source, self.lexer.cursor, self.lexer.cursor + 20))
+    print(string.format("error %s at:%s:%s-%s, src:%s", desc, loc.file, loc.line, loc.column, string.sub(self.lexer.source, self.lexer.cursor, self.lexer.cursor + 20)))
     error(desc)
 end
 
@@ -727,7 +742,7 @@ function parserMeta:doParse()
                 self:setSpecifier({kind = TokenKind.kRaw, value = value, range = token.range})
             elseif value == "namespace" then
                 self:parseNamespace()
-            elseif value == "struct" or value == "class" then
+            elseif value == "struct" or value == "class" or value == "union" then
                 self.sentance.isStruct = true
                 self:processClass(value == "struct")
             elseif value == "enum" then
@@ -736,7 +751,9 @@ function parserMeta:doParse()
                 self.sentance.attr.isVirtual = true
             elseif value == "constexpr" then
                 self.sentance.attr.isConstExpr = true
-            elseif value == "inline" or value == "override" or value == "final" then
+            elseif value == "static" then
+                self.sentance.attr.isStatic = true
+            elseif value == "inline" or value == "override" or value == "final" or value == "explicit" then
                 -- ignore
             elseif value == "friend" or value == "template" or value == "static_assert" then
                 local c = self.lexer:JumpCtrl(';', '{')
@@ -964,7 +981,7 @@ function parserMeta:combineOperator(opToken)
     elseif token.kind == TokenKind.kIdentify or value == "::" or value == "const" or value == "volatile" then  -- 重载类型转换
         com.range[1] = self.lexer.cursor
         local q = self:tryParseCV()
-        local c = self:tryCombine()
+        local c = self:tryCombine(token)
         if not c then
             self:error("") 
         end
@@ -1011,7 +1028,7 @@ function parserMeta:combineOperator(opToken)
         self:error("")
     end
 
-    if self.peekToken().value ~= '(' then
+    if self:peekToken().value ~= '(' then
         self:error()
     end
     return com
@@ -1192,7 +1209,7 @@ function parserMeta:processEnum()
     end
 
     if token.value == ':' then  -- underlying type
-        local combined = self:combineNames()
+        local combined = self:tryCombine()
         print("ccc", combined.id)
 
         token = self:getToken()
@@ -1210,7 +1227,7 @@ end
 -- 生成唯一名称
 function parserMeta:genAnonymousName()
     self.anonymousIdx = self.anonymousIdx + 1
-    return string.froamt("_anonymous_%s_", self.anonymousIdx)
+    return string.format("_anonymous_%s_", self.anonymousIdx)
 end
 
 function parserMeta:makeNamespace(seq)
@@ -1349,6 +1366,8 @@ function parserMeta:appendQualifier(token)
 end
 
 function parserMeta:setSpecifier(com)
+    assert(com.value ~= "constexpr")
+
     local s = self.sentance
     if not s.isDecl and not s.specifier then
         s.specifier = com
@@ -1557,7 +1576,7 @@ end
 
 function parserMeta:tryParseArgs(isDecl)
     local cursor = self.lexer.cursor
-    print("parserMeta:tryParseArgs", string.sub(self.lexer.source, cursor))
+    --print("parserMeta:tryParseArgs", string.sub(self.lexer.source, cursor))
     local block = self:pushBlock(self.domain, ')')
     block.isArgsBlock = true
     block.isDecling = isDecl
@@ -1642,7 +1661,7 @@ function parserMeta:tryParseDeclImpl(deep)
             print("zzzzzzz", combine.value)
             if next.value == '(' then
                 decl, modifier = self:tryParseDeclImpl(deep + 1)
-                print("cccccccc", string.sub(self.lexer.source, self.lexer.cursor))
+                --print("cccccccc", string.sub(self.lexer.source, self.lexer.cursor))
                 if not decl then
                     self:error("")
                     return
@@ -1686,7 +1705,7 @@ function parserMeta:tryParseDeclImpl(deep)
 
     local next = self:getToken(true)
     if next.value == '(' then
-        print(string.sub(self.lexer.source, self.lexer.cursor))
+        --print(string.sub(self.lexer.source, self.lexer.cursor))
         if not modifier.args then
             modifier.args = self:tryParseArgs()
             --TODO: 错误检查
@@ -1724,13 +1743,13 @@ function parserMeta:tryParseDeclImpl(deep)
     --lib.Log(qualifier)
     --print(decl.paramenters, decl.memberRef)
 
-    print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
+    --print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
 
     if not modifier.args then
         next = self:getToken()
         if next then
             if next.value == '(' then
-                print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
+                --print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
                 modifier.args = self:tryParseArgs()
                 --TODO: 错误检查
                 self:tryParseFuncAttr()
@@ -1823,7 +1842,7 @@ function parserMeta:skipFunctionBody()
                 self:error("unexpect symbol")
             end
 
-            if not self.lexer.JumpCtrl(closeSymbol) then
+            if not self.lexer:JumpCtrl(closeSymbol) then
                 self:error("")
             end
 
@@ -1838,7 +1857,7 @@ function parserMeta:skipFunctionBody()
 
     -- 跳过函数体
     if token.value == '{' then      -- 函数体
-        if not self.lexer.JumpCtrl('}') then
+        if not self.lexer:JumpCtrl('}') then
             self:error("")
         end
     elseif token.value ~= ';' then  -- 函数声明
@@ -1901,7 +1920,7 @@ end
 
 -- 打开圆括号
 function parserMeta:openBracket(tolen)
-    print("parserMeta:openBracket", string.sub(self.lexer.source, self.lexer.cursor))
+    --print("parserMeta:openBracket", string.sub(self.lexer.source, self.lexer.cursor))
     local s = self.sentance
     local decl = s.declarator
     if not s.specifier and not decl.seq then
@@ -2109,7 +2128,7 @@ function parserMeta:produce()
     end
 end
 
-local parser = CreateParser()
+--local parser = CreateParser()
 --[=[
 print("1")
 parser:ParseSource([[struct const typename Type::template InnerType<int>::type value;]])
@@ -2152,7 +2171,7 @@ local source = [[
 
 --print(string.sub("1234567", 2, 4))
 
-parser:ParseSource(source)
+--parser:ParseSource(source)
 --parser:setSource(source)
 --parser:getToken()
 --parser:processClass()
@@ -2168,7 +2187,7 @@ parser:ParseSource(source)
 --parser:ParseSource [[typedef int int_t, *intp_t, *(&fp)(int, ulong), arr_t[10]; ]]
 
 
---[[
+--[=[
 local s = lpeg.match(c_split_refer, "/*xx*/::A::/*vv??*/B < int > :: c")
 print(s)
 lib.Log(s)
@@ -2178,5 +2197,30 @@ s = lpeg.match(c_split_refer, "A::B<int>::c")
 
 s = lpeg.match(c_split_refer, " A ::") -- has some problem
 lib.Log(s)
+
+
+local c_line = P{
+    Cs((V"exp" - (P"//" + '\n'))^0) * (p_comment + P'\n' + -P(1)),
+    exp = (p_multi_line_comment + S" \t" + P'\\\n')^1/' ' + c_char + c_string + C(P(1)),
+}
+
+local s = [[
+    a '\n' "zouhui" "\\n" \
+    "d" x/*multi line comment*/ //comment \
+    b
+    c
+    d
 ]]
 
+print(lpeg.match(c_line, s))
+print(lpeg.match(c_line, [[1]]))
+print(lpeg.match(c_line, [[]]))
+
+local s1 = [[//xuantao]]
+
+print(lpeg.match(p_comment, s1))
+]=]
+
+return {
+    CreateParser = CreateParser,
+}
