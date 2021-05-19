@@ -257,9 +257,9 @@ struct LuaFunc : public BaseObj
     const int BaseObj::* get_member_ptr() const { return &BaseObj::a; }
 
     // p1 == p2 == p3 == p4
-    int BaseObj::* (BaseObj::* p_1)() = nullptr;
-    int BaseObj::* ((BaseObj::* p_2))() = nullptr;
-    int BaseObj::* ((BaseObj::* p_3)()) = nullptr;
+    int BaseObj::* (BaseObj::* p_1)();// = nullptr;
+    int BaseObj::* ((BaseObj::* p_2))();// = nullptr;
+    int BaseObj::* ((BaseObj::* p_3)());// = nullptr;
     int(BaseObj::* ((BaseObj::* p_4)()));
 
     //int m_c, m_d = 1, 2; error
@@ -365,7 +365,7 @@ struct test_anymouse_struct_member {
     int a1 = 0, f2();
     BaseObj (b1), b2();
 
-    BaseObj(*pobj) = nullptr;
+    BaseObj(*pobj);// = nullptr;
 };
 
 BaseObj g_base_obj_1();     // declare function
@@ -394,7 +394,7 @@ void teset_set_int(int) {}
 void test_default_value(int s, int e/* = s [not allow]*/) {}
 
 void test_param_func_ptr_1(int(void)) {}
-void test_param_func_ptr_2(int(*)(void) = nullptr) {}
+void test_param_func_ptr_2(int(*)(void)/* = nullptr*/) {}
 void test_param_func_ptr_3(int(int)) {}
 void test_param_func_ptr_4(int(a)) { printf("test_param_func_ptr_4:%d\n", a); }
 void test_param_func_ptr_5(int(* p_int)) {}
@@ -418,18 +418,18 @@ struct abs_struct {
 
     int b = 1;
     int c = 2;
-    int(obj_var) = 1;   // obj_var ÎªintÀàÐÍ±äÁ¿
+    int(obj_var)/* = 1*/;   // obj_var Îªintï¿½ï¿½ï¿½Í±ï¿½ï¿½ï¿½
 };
 
 struct abs_struct::obj abs_struct::obj;
 
-// ²ÎÊýÎªº¯ÊýÖ¸Õë
-// ÔÚ²ÎÊýÁÐ±íÖÐÓÅÏÈ½âÊÍÎªº¯ÊýÀàÐÍ
+// ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+// ï¿½Ú²ï¿½ï¿½ï¿½ï¿½Ð±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 void test_param_func_ptr_10(int(abs_struct)) {
     //printf("1111 %s\", )
 }
 
-// abs_struct ÎªintÀàÐÍ±äÁ¿
+// abs_struct Îªintï¿½ï¿½ï¿½Í±ï¿½ï¿½ï¿½
 int(abs_struct);
 
 //typename int f_get_int_4();
@@ -463,8 +463,8 @@ struct test_template_construct {
 int main(int argc, char* argv[])
 {
     // struct abs_struct abs_struct;
-    // ºÍÉÏÃæÐ§¹ûÏàÍ¬
-    struct abs_struct (abs_struct);   // ¶¨ÒåÍ¬Ãû±äÁ¿£¬±ØÐëÒªÓÐstruct
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð§ï¿½ï¿½ï¿½ï¿½Í¬
+    struct abs_struct (abs_struct);   // ï¿½ï¿½ï¿½ï¿½Í¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½struct
     // must need struct
     struct abs_struct::obj abs_struct_obj_1;
     // error
@@ -617,9 +617,9 @@ int main(int argc, char* argv[])
     int(foo_8());// = nullptr;
     printf("7.5.%s\n", typeid(foo_8).name());
 
-    auto (*foo_9)() -> int;         // ¶¨Òå±äÁ¿
-    auto (*foo_10)() -> int(*)();   // ¶¨Òå±äÁ¿
-    auto foo_11() -> int(*)();      // ÉùÃ÷º¯Êý
+    auto (*foo_9)() -> int;         // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+    auto (*foo_10)() -> int(*)();   // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+    auto foo_11() -> int(*)();      // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     // auto foo_12() -> int();      // error, can not return function type
 
     //int ((*foo_7)(void))(void) = nullptr; //error, can not declare a function not return a function

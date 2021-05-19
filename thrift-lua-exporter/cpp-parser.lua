@@ -204,7 +204,8 @@ local c_token = P{
     keywords = C((
         P"class" + "struct" + "union" + "enum" + "template" + "virtual" +
         "typename" + "decltype" + "final" + "constexpr" + "const" + "volatile" + "mutable" +
-        "namespace" + "auto" + "operator" + "sizeof" + "typedef" + "static" + "inline" + "explicit"
+        "namespace" + "auto" + "operator" + "sizeof" + "typedef" + "static_assert" + "static" + "inline" + "explicit" +
+        "public" + "protected" + "private" + "extern"
         ) * -p_rest) / buildToken(TokenKind.kKeyword),
     symbols = C(P"..." + "&&" + "||" + "->" + "+=" + "-=" + "|=" + "&=" + "/=" + "*=" + "==" + ">=" + "<="
         + "::" + "<<" + ">>" + ':' + '#'
@@ -755,6 +756,7 @@ function parserMeta:doParse()
                 self.sentance.attr.isStatic = true
             elseif value == "inline" or value == "override" or value == "final" or value == "explicit" then
                 -- ignore
+            elseif value == "extern" then
             elseif value == "friend" or value == "template" or value == "static_assert" then
                 local c = self.lexer:JumpCtrl(';', '{')
                 if not c then
@@ -895,6 +897,8 @@ function parserMeta:parseInherits(defaultAccess)
             elseif symbol == ',' then
                 self:getToken() -- skip ','
             else
+                print("symbol", symbol)
+                lib.Log(token)
                 self:error("unexpect token")
             end
         elseif value == "virtual" then
@@ -1069,6 +1073,8 @@ function parserMeta:tryCombine(token)
         return self:combineDecltype(token)
     elseif token.value == "operator" then
         return self:combineOperator(token)
+    elseif token.value == "void" or token.value == "auto" then
+        return token
     elseif token.kind ~= TokenKind.kIdentify and token.value ~= "::" then
         self:rollback(token)
         return
@@ -1310,7 +1316,7 @@ function parserMeta:processClass(isStruct)
         self:rollback(symbol)
 
         if not combined or
-            (combine.kind ~= TokenKind.kIdentify and combined.kind ~= TokenKind.kRefer) then
+            (combined.kind ~= TokenKind.kIdentify and combined.kind ~= TokenKind.kRefer) then
             self:error("class/struct expect and identify name")
         end
         self:setSpecifier(combined)
@@ -1965,8 +1971,12 @@ function parserMeta:openBracket(tolen)
         return
     end
 
+    if s.specifier.value == "BaseObj" then
+        print("domain.kind", self.domain.kind, self.domain.id)
+    end
+
     -- 构造函数
-    if self.domain.kind == ObjectType.kClass and self.domain.name == s.specifier.value then
+    if self.domain.kind == ObjectType.kClass and self.domain.id == s.specifier.value then
         decl.attr.isConstruct = true
         decl.kind = ObjectType.kFunction
         decl.seq = s.specifier
@@ -1978,8 +1988,11 @@ function parserMeta:openBracket(tolen)
 
         local attr = self:tryParseFuncAttr()
         lib.ShallowCopy(attr, decl.attr)
-
+        
         self:skipFunctionBody()
+        self:produce()
+        self:resetSentance()
+        print("xxxxxxxxxccccccccccccccccc")
         return
     end
 
