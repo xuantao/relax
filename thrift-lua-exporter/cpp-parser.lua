@@ -34,11 +34,10 @@ local c_char = P"'" * C((P(1) - P"'")^0) * P"'"
 --local c_boolean = (C"true" + C"false" + C"TRUE" / "true" + C"FALSE" / "false") - (p_digit + p_idsafe)
 -- 数值常量提取器
 local c_numeric = P{
-    "num",
-    num = C(V"float" + (V"bin" + V"oct" + V"dec" + V"hex") * V"intSuf"),
-    bin = P"0" * S"bB" * S"01"^1 * -S"29",
+    C(V"float" + (V"bin" + V"oct" + V"dec" + V"hex") * V"intSuf"),
+    bin = P"0" * S"bB" * S"01"^1 * -R"29",
     oct = P"0" * p_digit^0 * -S"bBxX",
-    dec = S"19" * p_digit^0,
+    dec = R"19" * p_digit^0,
     hex = P'0' * S'xX' * R('09', 'af', "AF")^1,
     float = (p_digit^1 * P'.' * p_digit^0 + P'.' * p_digit^1) * (S'eE' * p_sign * p_digit^1)^-1 *(S"lL" + S"fF")^-1,
     intSuf = (S"uU" * S"lL" + S"lL" * S"uU" + S"uU" + S"lL")^-1,
@@ -97,7 +96,7 @@ local function testCapture()
     assert(M(c_boolean, [[FALSE]]) == "false")
 ]=]
     assert(M(c_numeric, "a") == nil)
-    assert(M(c_numeric, "1") == "1")
+    assert(M(c_numeric, "4") == "4")
     assert(M(c_numeric, "1u") == "1u")
     assert(M(c_numeric, "1l") == "1l")
     assert(M(c_numeric, "1ul") == "1ul")
@@ -277,7 +276,7 @@ function lexerMeta:Capture(type)
         range = {self.cursor, p},
     }
     self.cursor = p
-    print(debug.traceback())
+    --print(debug.traceback())
     print("lexer", "capture", s)
     return token
 end
@@ -787,9 +786,9 @@ function parserMeta:doParse()
             elseif value == ";" then
                 self:meetSemicolon()
             elseif value == '(' then
-                self:openBracket()
+                self:openBracket(token)
             elseif value == ')' then
-                self:closeBracket()
+                self:closeBracket(token)
             elseif value == '=' then
                 self:parseAssign()
             elseif value == '[' then
@@ -945,6 +944,74 @@ function parserMeta:combineDecltype(token)
     return ret
 end
 
+function parserMeta:tryParseType()
+    local cursor = self.lexer.cursor
+    local q = self:tryParseCV()
+    local c = self:tryCombine(token)
+    if not c then
+        self:error("") 
+        self.lexer:SetCursor(cursor)
+        return
+    end
+
+    self:tryParseQualifier(q)
+    local type = {
+        qualifier = q,
+        name = c.value
+    }
+    if c.kind == TokenKind.kRaw then
+        type.kind = TypeKind.kRaw
+    elseif c.kind == TokenKind.kIdentify or c.kind == TokenKind.kRefer then
+        type.kind = TypeKind.kRefer
+    elseif c.value == "auto" then
+        type.kind = TypeKind.kRefer
+    else
+        self:error(string.format("unexpect token %s", c.value))
+        self.lexer:SetCursor(cursor)
+        return
+    end
+
+    while true do
+        c = self:tryCombine()
+        if not c then
+            break
+        end
+
+        if c.kind ~= TokenKind.kMemberPtr then
+            self:error("")
+        end
+
+        local ret = type
+        type = {
+            kind = TypeKind.kMemberPtr,
+            name = "",
+            class = c.value,
+            ret = ret,
+        }
+        type.qualifier = self:tryParseQualifier()
+    end
+
+    if self:peekToken().value == '(' then
+        local t = self:getToken()
+        local d, m = self:tryParseDecl()
+        --if not d or d.type.kind ~= TypeKind.kMemberPtr or 
+        print("try parse type")
+        lib.Log(d)
+        if d then
+            mergeQualifier(type.qualifier, m.qualifier)
+            lib.ShallowCopy(type, m)
+            type = d.type
+
+            --TODO: 处理函数属性
+            self:tryParseFuncAttr()
+        else
+            self:rollback(t)
+        end
+    end
+
+    return type
+end
+
 function parserMeta:combineOperator(opToken)
     local com = {kind = TokenKind.kOperator, value = opToken.value, range = opToken.range}
     local qualifier = self:tryParseQualifier()
@@ -982,54 +1049,18 @@ function parserMeta:combineOperator(opToken)
 
         com.value = com.value .. ' ' .. op
         com.operator = {kind = OperatorKind.kNewDelete, value = op}
-    elseif token.kind == TokenKind.kIdentify or value == "::" or value == "const" or value == "volatile" then  -- 重载类型转换
+    else -- 重载类型转换
+        self:rollback(token)
         com.range[1] = self.lexer.cursor
-        local q = self:tryParseCV()
-        local c = self:tryCombine(token)
-        if not c then
-            self:error("") 
+        local type = self:tryParseType()
+        if not type then
+            self:error("operator type cast failed")
         end
 
-        self:tryParseQualifier(q)
-        local type = {
-            qualifier = q,
-            name = c.value
-        }
-        if c.kind == TokenKind.kRaw then
-            type.kind = TypeKind.kRaw
-        elseif c.kind == TokenKind.kIdentify or c.kind == TokenKind.kRefer then
-            type.kind = TypeKind.kRefer
-        else
-            self:error()
-        end
-
-        while true do
-            c = self:tryCombine()
-            if not c then
-                break
-            end
-
-            if c.kind ~= TokenKind.kMemberPtr then
-                self:error("")
-            end
-
-            local ret = type
-            type = {
-                kind = TypeKind.kMemberPtr,
-                name = "",
-                class = c.value,
-                ret = ret,
-            }
-            type.qualifier = self:tryParseQualifier()
-        end
-
-        --com.kind = TokenKind.kOperatorTypeCast
-        --com.value = type.value
-        --TODO: 正确设置 com.value 
         com.operator = {kind = OperatorKind.kTypeCast, value = type}
         com.range[2] = self.lexer.cursor
-    else
-        self:error("")
+    --else
+    --    self:error("")
     end
 
     if self:peekToken().value ~= '(' then
@@ -1415,7 +1446,7 @@ function parserMeta:appendDeclSeq(com)
 end
 
 function parserMeta:parseBitField()
-    local decl = self.declarator
+    local decl = self.sentance.declarator
     if self.domain.kind ~= ObjectType.kClass or not decl.seq then
         self:error("unexpect code \":\"")
     end
@@ -1525,8 +1556,9 @@ function parserMeta:tryParseFuncAttr()
             attr.isNoexcept = true
         elseif value == "->" then
             --TODO: 
-            type = {}
-            self:tryCombine()
+            --type = {}
+            --self:tryCombine()
+            self:tryParseType()
         elseif value == '&' or value == "&&" then
             print("what is this")
         elseif value == "override" or value == "final" then
@@ -1616,6 +1648,7 @@ function parserMeta:tryParseDeclImpl(deep)
     self:tryParseCV({})     -- drop invalid cv
     local token = self:getToken(true)
     if token.value == ')' then
+        --[[
         decl = {
             seq = {kind = TokenKind.kIdentify, value = "", range = token.range},
             type = {
@@ -1627,6 +1660,8 @@ function parserMeta:tryParseDeclImpl(deep)
         }
         modifier = decl.type.ret
         self:rollback(token)
+        ]]
+        return
     elseif token.value == '*' or token.value == '&' or token.value == '&&' then
         table.insert(qualifier, token.value)
         self:tryParseQualifier(qualifier)
@@ -1925,7 +1960,7 @@ function parserMeta:checkIsValue()
 end
 
 -- 打开圆括号
-function parserMeta:openBracket(tolen)
+function parserMeta:openBracket(token)
     --print("parserMeta:openBracket", string.sub(self.lexer.source, self.lexer.cursor))
     local s = self.sentance
     local decl = s.declarator
@@ -2233,6 +2268,8 @@ local s1 = [[//xuantao]]
 
 print(lpeg.match(p_comment, s1))
 ]=]
+
+--print(lpeg.match(c_numeric, "4"))
 
 return {
     CreateParser = CreateParser,

@@ -439,7 +439,7 @@ static_assert(g_int_value_1 == 5, "abs_struct is a int value");
 
 // error, can not return function type
 //int() get_func_ptr() { return nullptr; }
-auto get_func_ptr_1() -> int(*) { return nullptr; }
+//auto get_func_ptr_1() -> int(*) { return nullptr; }
 auto get_func_ptr_2() -> auto(*)()->int { return nullptr; }
 
 struct test_bitfield_1 {

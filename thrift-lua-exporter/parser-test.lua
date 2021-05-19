@@ -7,6 +7,10 @@ local p = parser.CreateParser()
 --print(s)
 p:ParseSource(s)
 
+print("mmmmmmmmmmmmmm")
+lib.Log(p.domain)
+
+
 
 
 
