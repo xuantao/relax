@@ -14,6 +14,22 @@ function lib.ShallowCopy(src, dst)
     return dst
 end
 
+-- 深拷贝
+function lib.Clone(src)
+    if not src then return src end
+
+    local dst = {}
+    for k, v in pairs(src) do
+        if type(v) == "table" then
+            dst[k] = lib.Clone(v)
+        else
+            dst[k] = v
+        end
+    end
+    return v
+end
+
+-- 查找指定值的Key
 function lib.Find(tab, value)
     for k, v in pairs(tab) do
         if v == value then
