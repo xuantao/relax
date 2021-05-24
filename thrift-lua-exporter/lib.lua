@@ -26,7 +26,7 @@ function lib.Clone(src)
             dst[k] = v
         end
     end
-    return v
+    return dst
 end
 
 -- 查找指定值的Key

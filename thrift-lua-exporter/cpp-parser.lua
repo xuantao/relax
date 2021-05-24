@@ -204,7 +204,7 @@ local c_token = P{
         P"class" + "struct" + "union" + "enum" + "template" + "virtual" +
         "typename" + "decltype" + "final" + "constexpr" + "const" + "volatile" + "mutable" +
         "namespace" + "auto" + "operator" + "sizeof" + "typedef" + "static_assert" + "static" + "inline" + "explicit" +
-        "public" + "protected" + "private" + "extern"
+        "public" + "protected" + "private" + "extern" + "using"
         ) * -p_rest) / buildToken(TokenKind.kKeyword),
     symbols = C(P"..." + "&&" + "||" + "->" + "+=" + "-=" + "|=" + "&=" + "/=" + "*=" + "==" + ">=" + "<="
         + "::" + "<<" + ">>" + ':' + '#'
@@ -337,9 +337,9 @@ local c_qualifier = Ct(((p_empty_list / 0) * (
     (P"&&" / "rightValue") + (P'&' / "reference") + (P'*' / "pointer") + (P"const" / 'const') + (P"volatile" / 'volatile')))^0) * Cp()
 
 function lexerMeta:Qualifiers()
-    print("lexerMeta:Qualifiers()")
+    --print("lexerMeta:Qualifiers()")
     local q, p = lpeg.match(c_qualifier, self.source, self.cursor)
-    print("lexerMeta:Qualifiers()", q, p, string.sub(self.source, p))
+    --print("lexerMeta:Qualifiers()", q, p, string.sub(self.source, p))
     if q then self.cursor = p end
     return q
 end
@@ -365,16 +365,6 @@ local p =  P{
 --print(lpeg.match(c_angle_bracket, [[<x, "111",(1>2),(1<2),y /*xxx*/  z,1>>2,2<<3,4>=4,5<=6>]]))
 ]=]
 
-function log(t)
-    if not t then return end
-    if type(t) == "table" then
-        for _, v in ipairs(t) do
-            print(v)
-        end
-    else
-        print(t)
-    end
-end
 --[=[
 log(lpeg.match(c_angle_bracket, [[<sfag>]]))
 log(lpeg.match(c_type, [[:: function<sfag> safa]]))
@@ -419,11 +409,11 @@ print(testJump([[xuantao {} ; zouhui]], ';'))
 ]=]
 
 local AccessType = {
-    kPublic = 1,
-    kProcteced = 2,
-    kPrivate = 3,
+    kPublic = "public",
+    kProcteced = "protected",
+    kPrivate = "private",
 }
-
+--[[
 local ObjectType = {
     --kFile = 1,
     kGlobal = 1,
@@ -435,13 +425,20 @@ local ObjectType = {
     kOverload = 7,      -- 重载函数
     kAlias = 8,         -- 引用
 }
-
-local SentanceState = {
-    kSpecifierSeq = 1,  -- 声明
-    kDeclcrator = 2,    -- 
-    kSurffix = 3,       -- 后续扩展
+]]
+local ObjectType = {
+    kFile = "file",
+    kGlobal = "global",
+    kNamespace = "namespace",   -- 名字空间
+    kClass = "class",           -- 自定义类型
+    kEnum = "enum",             -- 枚举
+    kVariate = "variate",       -- 变量
+    kFunction = "function",     -- 函数
+    kOverload = "overload",     -- 重载函数
+    kAlias = "alias",           -- 引用
 }
 
+--[[
 local TypeKind = {
     kRaw = 1,           -- 原生类型
     kRefer = 2,         -- 引用自定义类型
@@ -449,7 +446,14 @@ local TypeKind = {
     kMemberPtr = 4,     -- 成员指针
     kMemberFuncPtr = 5, -- 成员函数指针
 }
-
+]]
+local TypeKind = {
+    kRaw = "raw",                       -- 原生类型
+    kRefer = "refer",                   -- 引用自定义类型
+    kFunction = "function",             -- 函数
+    kMemberPtr = "memberPtr",           -- 成员指针
+    kMemberFuncPtr = "memberFuncPtr",   -- 成员函数指针
+}
 local OperatorKind = {
     kSymbol = 1,        -- 符号
     kTypeCast = 2,      -- 类型转换
@@ -687,7 +691,7 @@ function parserMeta:preProcess()
     --self.lexer
     local s, p = lpeg.match(c_line * Cp(), self.lexer.source, self.lexer.cursor)
     if s then
-        print("skip", s)
+        --print("skip", s)
         self.lexer.cursor = p
     else
         self:error()
@@ -696,15 +700,16 @@ end
 
 function parserMeta:error(desc, range)
     local loc = self.lexer:Location(range)
-    lib.Log(self.sentance)
-    print(string.format("error %s at:%s:%s-%s, src:%s", desc, loc.file, loc.line, loc.column, string.sub(self.lexer.source, self.lexer.cursor, self.lexer.cursor + 20)))
-    error(desc)
+    --lib.Log(self.sentance)
+    local msg = string.format("error %s at:%s:%s-%s", desc, loc.file, loc.line, loc.column)
+    error(msg)
 end
 
-function parserMeta:warning(desc)
+function parserMeta:warning(desc, range)
     --lib.Log(self.sentance)
-    print("at:" .. string.sub(self.lexer.source, self.lexer.cursor, self.lexer.cursor + 20))
-    print(debug.traceback())
+    local loc = self.lexer:Location(range)
+    print(string.format("warning %s at:%s:%s-%s", desc, loc.file, loc.line, loc.column))
+    --print(debug.traceback())
 end
 
 function parserMeta:doParse()
@@ -806,8 +811,7 @@ function parserMeta:doParse()
             elseif value == '&&' or value == '&' or value == '*' then
                 self:appendQualifier(token)
             else
-                lib.Log(token)
-                self:error("");
+                self:error(string.format("unexpect symbol \"%s\"", value), token.range)
             end
         elseif token.kind == TokenKind.kIdentify then
             self:appendDeclSeq(self:tryCombine(token))
@@ -994,17 +998,17 @@ function parserMeta:tryParseType()
 
     if self:peekToken().value == '(' then
         local t = self:getToken()
-        local d, m = self:tryParseDecl()
+        local d = self:tryParseDecl({type = type})
         --if not d or d.type.kind ~= TypeKind.kMemberPtr or 
         print("try parse type")
         lib.Log(d)
         if d then
-            mergeQualifier(type.qualifier, m.qualifier)
-            lib.ShallowCopy(type, m)
+            --mergeQualifier(type.qualifier, m.qualifier)
+            --lib.ShallowCopy(type, m)
             type = d.type
 
             --TODO: 处理函数属性
-            self:tryParseFuncAttr()
+            --self:tryParseFuncAttr()
         else
             self:rollback(t)
         end
@@ -1429,7 +1433,7 @@ function parserMeta:appendDeclSeq(com)
         s.isDecl = true
         s.declarator.type = {
             kind = TypeKind.kMemberPtr,
-            ret = s.type,
+            ret = s.declarator.type,
             class = com.value,
             qualifier = {},
         }
@@ -1600,7 +1604,8 @@ function parserMeta:tryParseDeclFuncAttr(attr)
 end
 
 function parserMeta:tryParseTailType()
-    if self:peekToken().vlaue ~= "->" then
+    if self:peekToken().value ~= "->" then
+        print("xxxxxxxxxxxxx", self:peekToken().value)
         return
     end
 
@@ -1667,71 +1672,47 @@ end
 -- 识别定义的函数变量的参数修饰等
 -- 如：auto (*f)(int a, int b) noexcept -> int
 -- 的：[(int a, int b) noexcept -> int]这块内容
-function parserMeta:parseDeclFunc(decl, modifier)
-    if modifier.args then
+function parserMeta:parseDeclFunc(decl)
+    if decl.type.args then
         self:error("unexpect \"()\"")
     end
 
-    modifier.args = self:tryParseArgs()
-    if not modifier.args then
+    decl.type.args = self:tryParseArgs()
+    if not decl.type.args then
         self:error("parse declare function arguments failed")
     end
 
     self:tryParseDeclFuncAttr(decl.attr)
-    local tailType = self:tryParseTailType()
+    --local tailType = self:tryParseTailType()
 
-    if modifier.kind == TypeKind.kMemberPtr then
-        modifier.kind = TypeKind.kMemberFuncPtr
+    if decl.type.kind == TypeKind.kMemberPtr then
+        decl.type.kind = TypeKind.kMemberFuncPtr
     else
-        modifier.kind = TypeKind.kFunction
-        modifier.ret = {qualifier = {}}
+        decl.type.kind = TypeKind.kFunction
+        --decl.type.ret = {qualifier = {}}
     end
 
-    return modifier.ret, tailType
+    --return modifier.ret, tailType
 end
 
 --[[ 尝试解析括号
     括号可能是函数、变量声明
 ]]
-function parserMeta:tryParseDeclImpl(deep)
-    --print("parserMeta:tryParseDeclImpl begin")
+function parserMeta:tryParseDeclImpl()
     if self:peekToken().value == ')' then
         return
     end
 
     local decl
-    local modifier
+    local type
     local tailRet
-
     local cv = self:tryParseCV()     -- drop invalid cv
     local qualifier = self:tryParseQualifier()
-
     local token = self:getToken(true)
-    --[[if token.value == '*' or token.value == '&' or token.value == '&&' then
-        table.insert(qualifier, token.value)
-        self:tryParseQualifier(qualifier)
-
-        local next = self:getToken(true)
-        if next.value == '(' then
-            decl, modifier = self:tryParseDeclImpl(deep + 1)
-            if not decl then
-                self:error("")
-                return
-            end
-        else
-            decl = {type = {qualifier = {}}}
-            modifier = decl.type
-            if next.kind == TokenKind.kIdentify then
-                decl.seq = {kind = TokenKind.kIdentify, value = next.value, range = next.range}
-            else
-                decl.seq = {kind = TokenKind.kIdentify, value = "", range = next.range}
-                self:rollback(next)
-            end
-        end
-    else]]if token.value == '(' then
-        decl, modifier = self:tryParseDeclImpl(deep + 1)
+    if token.value == '(' then
+        decl, type, tailRet = self:tryParseDeclImpl()
         if not decl then
-            self:error("")  -- 无法识别内层括号
+            self:error("unknown syntax")  -- 无法识别内层括号
             return
         end
     elseif token.value == "::" or token.kind == TokenKind.kIdentify then
@@ -1742,58 +1723,62 @@ function parserMeta:tryParseDeclImpl(deep)
         end
 
         if combine.kind == TokenKind.kMemberPtr then
-            self:tryParseQualifier(qualifier)
+            local q = self:tryParseQualifier()
             local next = self:getToken(true)
             --print("zzzzzzz", combine.value)
             if next.value == '(' then
-                decl, modifier = self:tryParseDeclImpl(deep + 1)
-                --print("cccccccc", string.sub(self.lexer.source, self.lexer.cursor))
+                decl, type, tailRet = self:tryParseDeclImpl()
                 if not decl then
-                    self:error("")
+                    self:error("parse \"()\" failed")
                     return
                 end
 
-                modifier.kind = TypeKind.kMemberPtr
-                modifier.class = combine.value
-                modifier.ret = {qualifier = {}}
+                if tailRet then
+                    self:error("this place not allow tailing return types")
+                end
+
+                mergeQualifier(q, type.qualifier)
+                type.qualifier = q
+                type.kind = TypeKind.kMemberPtr
+                type.class = combine.value
+                type.ret = {qualifier = {}}
+                type = type.ret
             else
                 decl = {
                     type = {
                         kind = TypeKind.kMemberPtr,
                         class = combine.value,
-                        qualifier = {},
+                        qualifier = q,
                         ret = {qualifier = {}}
                     }
                 }
-                modifier = decl.type
+                type = decl.type.ret
                 if next.kind == TokenKind.kIdentify then
-                    decl.seq = {kind = TokenKind.kIdentify, value = next.value, range = next.range}
-                    --decl.id = next.value
-                    --decl.range = next.range
+                    decl.seq = next
                 else
                     decl.seq = {kind = TokenKind.kIdentify, value = "", range = next.range}
-                    --decl.id = ""
-                    --decl.range = next.range
                     self:rollback(next)
                 end
             end
         else
             decl = {
                 seq = combine,
-                type = {qualifier = {}}
+                type = {qualifier = {}},
             }
-            modifier = decl.type
+            type = decl.type
         end
     else
-        --print("xxxxxxxccccccccccccccc 1",  "-" .. token.value..'-')
         return
     end
 
     local next = self:getToken(true)
     if next.value == '(' then
-        modifier, tailRet = self:parseDeclFunc(decl, modifier)
-        if tailRet then
-            self:error("this place not declare tail return type")
+        --TODO: 检测是否是函数声明而非变量定义
+        mergeQualifier(type.qualifier, qualifier)
+        qualifier = {}
+        self:parseDeclFunc(decl, modifier)
+        if self:tryParseTailType() then
+            self:error("this place not allow declare tailing return type")
         end
 
         next = self:getToken(true)
@@ -1804,31 +1789,53 @@ function parserMeta:tryParseDeclImpl(deep)
         return
     end
 
-    mergeQualifier(modifier.qualifier, qualifier)
+    mergeQualifier(type.qualifier, qualifier)
 
     -- 函数与成员指针需要区分类型修饰符的位置（变量、返回值）
     if self:peekToken().value == '(' then
+        decl.type.ret = {qualifier = {}}
+        type = decl.type.ret
+
         self:getToken()
-        modifier, tailRet = self:parseDeclFunc(decl, modifier)
-        if tailRet then
-            self:error("this place not declare tail return type")
-        end
+        self:parseDeclFunc(decl)
+        --print("try parse tail:" .. string.sub(self.lexer.source, self.lexer.cursor))
+        tailRet = self:tryParseTailType()
     end
 
-    --print("xxxxxxxxxxxxxxxx", string.sub(self.lexer.source, self.lexer.cursor))
-    --lib.Log(decl)
-    return decl, modifier, tailRet
+    return decl, type, tailRet
 end
 
-function parserMeta:tryParseDecl()
+function parserMeta:tryParseDecl(d)
+    local tailRet
     local cursor = self.lexer.cursor
-    local decl, modifier = self:tryParseDeclImpl(1)
+    --local decl = lib.Clone(self.sentance.declarator)
+
+    local decl, type, tailRet = self:tryParseDeclImpl()
     if not decl then
         print("111111111 unknown xxxxxxxx")
         self.lexer:SetCursor(cursor)
         return
     end
-    return decl, modifier
+
+    mergeQualifier(d.type.qualifier, type.qualifier)
+    lib.ShallowCopy(d.type, type)
+    lib.ShallowCopy(d.attr, decl.attr)
+
+    -- 设置语句
+    --s.declarator.kind = ObjectType.kVariate
+    --s.declarator.type = decl.type
+    --s.declarator.seq = decl.seq
+
+    if tailRet then
+        if not decl.type.ret or
+            decl.type.ret.name ~= "auto" or
+            #decl.type.qualifier ~= 0 then
+            self:warning("tailing return type has some problem")
+        else
+            decl.type.ret = tailRet
+        end
+    end
+    return decl
     --[[
     local s = self.sentance
     local type = s.declarator.type
@@ -2048,9 +2055,11 @@ function parserMeta:openBracket(token)
         return
     end
 
-    local d, m = self:tryParseDecl()
+    print("decl=", decl)
+    local d = self:tryParseDecl(lib.Clone(decl))
     -- 声明变量
     if d then
+        --[[
         mergeQualifier(decl.type.qualifier, m.qualifier)
         lib.ShallowCopy(decl.type, m)
         
@@ -2062,6 +2071,8 @@ function parserMeta:openBracket(token)
         --TODO: 处理函数属性
         --self:tryParseFuncAttr()
         self:tryParseDeclFuncAttr({})
+        ]]
+        s.declarator = d
         return
     end
 
@@ -2281,24 +2292,22 @@ print(lpeg.match(p_comment, s1))
 --print(lpeg.match(c_numeric, "4"))
 
 local source_func_decl = [[
-    int *p_int = nullptr, BaseObj::*p_md_int = nullptr, (BaseObj::* p_mf_int)() = nullptr;
-    int (&p_int_2) = a;
-    int(*BaseObj::*(*p_get_mem_ptr_1)) = nullptr;
-    int(*BaseObj::*(*p_get_mem_ptr_2)()) = nullptr;
+    //int *p_int = nullptr, BaseObj::*p_md_int = nullptr,
+    //(BaseObj::* p_mf_int)() = nullptr;
+    //int (&p_int_2) = a;
+    //int(*BaseObj::*(*p_get_mem_ptr_1)) = nullptr;
+    //int(*BaseObj::*(*p_get_mem_ptr_2)()) = nullptr;
 
-    //(int ((BaseObj::*)())) (*p_get_mem_ptr_3)();
-    //int(void) (*int_value_1)() = nullptr;
-    //int(*(BaseObj::*)(p_get_mem_ptr_3)()) = nullptr;
-
-    int BaseObj::* (*p_get_mem_ptr_3)() = nullptr;
-    int (BaseObj::* (*p_get_mem_ptr_4)()) = nullptr;
+    int (Node::* *p_get_mem_ptr_2)() = nullptr;
+    int BaseObj::* (*p_get_mem_ptr_3)() -> char = nullptr;
+    int (BaseObj::* (*p_get_mem_ptr_4)()) -> char = nullptr;
     int (BaseObj::* (*p_get_mem_ptr_5))() = nullptr;
-]]
+
 
 local p = CreateParser()
 p:ParseSource(source_func_decl)
 lib.Log(p.domain)
-
+]]
 
 return {
     CreateParser = CreateParser,
