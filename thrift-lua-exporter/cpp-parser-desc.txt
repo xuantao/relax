@@ -131,3 +131,7 @@ combine {
 3. operator完善
 4. 声明、定义生成完善
   函数实现？
+
+05-26问题
+1. void test_param_func_ptr_10(int(abs_struct))
+  无法正确识别参数类型-> int(*)(abs_struct)
